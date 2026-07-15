@@ -3,6 +3,7 @@
 
 const OpenAI = require('openai');
 const { toFile } = require('openai');
+const { MOCK, mockTranscript } = require('./mockAI');
 
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'whisper-1';
 
@@ -27,6 +28,7 @@ function extensionFor(contentType) {
 }
 
 async function transcribeAudio(buffer, contentType) {
+  if (MOCK) return mockTranscript();
   const file = await toFile(buffer, `voice-note.${extensionFor(contentType)}`, {
     type: contentType || 'audio/ogg',
   });

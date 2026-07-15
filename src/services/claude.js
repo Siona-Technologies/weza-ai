@@ -10,6 +10,7 @@ const {
   OUTPUT_SCHEMA,
   SYSTEM_PROMPT,
 } = require('./transactionSchema');
+const { MOCK, mockCategorize, mockReceipt } = require('./mockAI');
 
 // Default to the most capable model; override with CLAUDE_MODEL if needed.
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-8';
@@ -55,6 +56,7 @@ async function runExtraction(userContent) {
 
 // Receipt photo -> structured transaction.
 async function extractFromReceiptImage(buffer, mediaType) {
+  if (MOCK) return mockReceipt();
   const media_type = SUPPORTED_IMAGE_TYPES.includes(mediaType) ? mediaType : 'image/jpeg';
   return runExtraction([
     {
@@ -70,6 +72,7 @@ async function extractFromReceiptImage(buffer, mediaType) {
 
 // Text (typed message, or a Whisper transcript) -> structured transaction.
 async function categorizeText(text) {
+  if (MOCK) return mockCategorize(text);
   return runExtraction([
     {
       type: 'text',

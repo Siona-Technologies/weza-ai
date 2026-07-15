@@ -11,6 +11,13 @@ const { fetchTwilioMedia } = require('./twilioMedia');
 const { extractFromReceiptImage, categorizeText } = require('./claude');
 const { transcribeAudio } = require('./whisper');
 const { CONFIDENCE_REVIEW_THRESHOLD } = require('./transactionSchema');
+const { MOCK } = require('./mockAI');
+
+// In mock mode the media bytes are never used, so don't hit Twilio for them.
+async function getMedia(mediaUrl) {
+  if (MOCK) return { buffer: Buffer.alloc(0), contentType: '' };
+  return fetchTwilioMedia(mediaUrl);
+}
 
 // `source` is 'photo' | 'voice' | 'text' (from the webhook classifier).
 async function processMessage({ source, body, mediaUrl, mediaType }) {
@@ -18,10 +25,10 @@ async function processMessage({ source, body, mediaUrl, mediaType }) {
   let transcript = null;
 
   if (source === 'photo') {
-    const { buffer, contentType } = await fetchTwilioMedia(mediaUrl);
+    const { buffer, contentType } = await getMedia(mediaUrl);
     extraction = await extractFromReceiptImage(buffer, contentType);
   } else if (source === 'voice') {
-    const { buffer, contentType } = await fetchTwilioMedia(mediaUrl);
+    const { buffer, contentType } = await getMedia(mediaUrl);
     transcript = await transcribeAudio(buffer, contentType);
     extraction = await categorizeText(transcript);
   } else if (source === 'text') {

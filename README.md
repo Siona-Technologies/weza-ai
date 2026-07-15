@@ -26,6 +26,34 @@ The server exposes:
 - `POST /webhook/whatsapp` — Twilio WhatsApp inbound webhook (classifies photo /
   voice / text, logs the message, and replies with an acknowledgement)
 
+## Testing locally without API keys (mock mode)
+
+You can exercise the whole pipeline — classify → extract → (save) → reply —
+with **no API keys and no cost** by setting `MOCK_AI=true` in `.env`. Extraction
+is stubbed (keyword heuristics for text, canned results for photo/voice).
+
+```bash
+# One-off, no .env change needed:
+MOCK_AI=true npm run test:extract text "Sold 3 sodas for 150 KES"
+MOCK_AI=true npm run test:extract image ./anything.jpg   # file bytes ignored in mock
+MOCK_AI=true npm run test:extract voice ./anything.ogg
+
+# Or run the full server + webhook in mock mode:
+MOCK_AI=true npm run dev
+# then POST to http://localhost:3000/webhook/whatsapp (see fields below)
+```
+
+**Levels of local testing:**
+
+| What you want to test | What you need |
+|---|---|
+| Whole flow + replies (stubbed AI) | `MOCK_AI=true` — nothing else |
+| Real receipt/voice extraction | `ANTHROPIC_API_KEY` (+ `OPENAI_API_KEY` for voice) |
+| Persistence to Postgres | `DATABASE_URL` + `npm run migrate` (free cloud Postgres works) |
+| Real WhatsApp messages | Twilio sandbox + ngrok (below) |
+
+Turn `MOCK_AI` off (or remove it) to use the real Claude/Whisper path.
+
 ## Connecting the Twilio WhatsApp sandbox
 
 1. Start the local server (`npm run dev`), default port `3000`.

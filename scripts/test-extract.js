@@ -17,6 +17,17 @@ const { extractFromReceiptImage, categorizeText } = require('../src/services/cla
 const { transcribeAudio } = require('../src/services/whisper');
 const { buildReply } = require('../src/services/processMessage');
 const { CONFIDENCE_REVIEW_THRESHOLD } = require('../src/services/transactionSchema');
+const { MOCK } = require('../src/services/mockAI');
+
+// In mock mode the file bytes are ignored, so a missing file is fine.
+function readFile(p) {
+  try {
+    return fs.readFileSync(p);
+  } catch (err) {
+    if (MOCK) return Buffer.alloc(0);
+    throw err;
+  }
+}
 
 const IMAGE_TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
 const AUDIO_TYPES = { '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.amr': 'audio/amr' };
@@ -32,8 +43,10 @@ async function main() {
     process.exit(1);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('\nANTHROPIC_API_KEY is not set in .env — add it and try again.\n');
+  if (MOCK) {
+    console.log('(MOCK_AI is on — using stubbed extraction, no API calls)');
+  } else if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('\nANTHROPIC_API_KEY is not set in .env — add it, or set MOCK_AI=true to test without keys.\n');
     process.exit(1);
   }
 
@@ -44,15 +57,15 @@ async function main() {
     extraction = await categorizeText(arg);
   } else if (mode === 'image') {
     const ext = path.extname(arg).toLowerCase();
-    const buffer = fs.readFileSync(arg);
+    const buffer = readFile(arg);
     extraction = await extractFromReceiptImage(buffer, IMAGE_TYPES[ext] || 'image/jpeg');
   } else if (mode === 'voice') {
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('\nOPENAI_API_KEY is not set in .env — needed to transcribe voice notes.\n');
+    if (!MOCK && !process.env.OPENAI_API_KEY) {
+      console.error('\nOPENAI_API_KEY is not set in .env — needed to transcribe voice notes (or set MOCK_AI=true).\n');
       process.exit(1);
     }
     const ext = path.extname(arg).toLowerCase();
-    const buffer = fs.readFileSync(arg);
+    const buffer = readFile(arg);
     transcript = await transcribeAudio(buffer, AUDIO_TYPES[ext] || 'audio/ogg');
     console.log('\nTranscript:', transcript);
     extraction = await categorizeText(transcript);
