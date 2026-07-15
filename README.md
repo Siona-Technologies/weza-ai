@@ -64,16 +64,44 @@ Requires `ANTHROPIC_API_KEY` (and `OPENAI_API_KEY` for voice notes) in `.env`.
 Twilio media URLs are fetched with the account's Basic auth before being sent to
 Claude/Whisper. Persistence to Postgres and the weekly summary land in Phase 3.
 
+## Database (Phase 3)
+
+Transactions are persisted to PostgreSQL. Each message finds-or-creates a
+business by its WhatsApp phone number, then inserts one transaction with the
+full AI output (`raw_extraction` JSONB), `confidence_score`, and the
+`needs_review` flag. The app runs without a database too — persistence is
+skipped when `DATABASE_URL` is unset, so local extraction testing needs no DB.
+
+Set up the schema:
+
+```bash
+# 1. Point DATABASE_URL at a Postgres instance in .env
+#    (Render managed Postgres, or a local Postgres for dev)
+# 2. Apply the schema (idempotent — safe to re-run)
+npm run migrate
+```
+
+On **Render**: create a managed Postgres, copy its connection string into the
+web service's `DATABASE_URL` env var, and run `npm run migrate` (or add it as a
+build/deploy step). Set the service **Root Directory** to the backend folder if
+a separate frontend is ever added (CLAUDE.md deploy conventions).
+
 ## Project layout
 
 ```
 server.js            # entry point — loads .env first, then starts the app
 src/app.js           # Express app + middleware + routes
-src/routes/whatsapp.js          # Twilio webhook: validate, classify, process, reply
+src/routes/whatsapp.js          # Twilio webhook: validate, classify, process, persist, reply
 src/services/transactionSchema.js  # shared JSON schema + prompt (fixed categories)
 src/services/claude.js          # Claude vision + text categorization
 src/services/whisper.js         # OpenAI Whisper voice transcription
 src/services/twilioMedia.js     # authenticated fetch of Twilio media
 src/services/processMessage.js  # pipeline orchestration + reply generator
+src/db/pool.js                  # Postgres connection pool (optional / graceful)
+src/repositories/businesses.js  # find-or-create business by phone
+src/repositories/transactions.js # insert transaction + running totals
+db/schema.sql                   # database schema (enums, tables, index)
+scripts/migrate.js              # applies db/schema.sql  (npm run migrate)
+scripts/test-extract.js         # local AI test harness   (npm run test:extract)
 .env.example         # environment template (never commit .env)
 ```

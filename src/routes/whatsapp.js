@@ -1,8 +1,38 @@
 const express = require('express');
 const twilio = require('twilio');
 const { processMessage, buildReply } = require('../services/processMessage');
+const { isDbConfigured } = require('../db/pool');
+const { findOrCreateBusiness } = require('../repositories/businesses');
+const { insertTransaction } = require('../repositories/transactions');
 
 const router = express.Router();
+
+// Persist the extracted transaction. Best-effort: a DB failure must not stop us
+// replying to the owner. Skipped entirely when no database is configured.
+async function saveTransaction(reqBody, result) {
+  if (!isDbConfigured()) {
+    console.warn('[webhook] DATABASE_URL not set — skipping persistence.');
+    return;
+  }
+  try {
+    const phone = (reqBody.From || '').replace('whatsapp:', '');
+    const business = await findOrCreateBusiness({ phone, ownerName: reqBody.ProfileName });
+    const tx = await insertTransaction({
+      businessId: business.id,
+      source: result.source,
+      mediaUrl: reqBody.MediaUrl0,
+      extraction: result.extraction,
+      needsReview: result.needsReview,
+    });
+    console.log('[webhook] saved transaction', {
+      transactionId: tx.id,
+      businessId: business.id,
+      needsReview: tx.needs_review,
+    });
+  } catch (err) {
+    console.error('[webhook] DB save failed:', err.message);
+  }
+}
 
 /**
  * Classify an incoming Twilio WhatsApp message into one of the MVP capture
@@ -80,6 +110,9 @@ router.post('/whatsapp', async (req, res) => {
       needsReview: result.needsReview,
       extraction: result.extraction,
     });
+
+    // Phase 3: persist to Postgres before replying (best-effort).
+    await saveTransaction(req.body, result);
 
     return reply(res, buildReply(result));
   } catch (err) {
