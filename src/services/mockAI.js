@@ -48,8 +48,10 @@ function guessVendor(text) {
 }
 
 function mockCategorize(text) {
-  const category = guessCategory(text);
+  let category = guessCategory(text);
   const type = category === 'sales' ? 'sale' : guessType(text);
+  // A sale with no better category is a sale.
+  if (type === 'sale' && category === 'other') category = 'sales';
   const amount = guessAmount(text);
   const vendor = guessVendor(text);
   return {
