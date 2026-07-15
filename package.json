@@ -14,8 +14,10 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "openai": "^6.47.0",
     "twilio": "^6.0.2"
   },
   "devDependencies": {
