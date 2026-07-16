@@ -10,6 +10,12 @@ const router = express.Router();
 // Persist the extracted transaction. Best-effort: a DB failure must not stop us
 // replying to the owner. Skipped entirely when no database is configured.
 async function saveTransaction(reqBody, result) {
+  // Greetings and small talk aren't transactions — recording them would put
+  // 0 KES rows in the owner's books and skew the weekly summary.
+  if (!result.isTransaction) {
+    console.log('[webhook] no transaction in message — nothing to persist.');
+    return;
+  }
   if (!isDbConfigured()) {
     console.warn('[webhook] DATABASE_URL not set — skipping persistence.');
     return;
@@ -107,6 +113,7 @@ router.post('/whatsapp', async (req, res) => {
       from: req.body.From,
       source: result.source,
       transcript: result.transcript,
+      isTransaction: result.isTransaction,
       needsReview: result.needsReview,
       extraction: result.extraction,
     });

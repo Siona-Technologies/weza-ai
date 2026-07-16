@@ -10,7 +10,7 @@
 const { fetchTwilioMedia } = require('./twilioMedia');
 const { extractFromReceiptImage, categorizeText } = require('./claude');
 const { transcribeAudio } = require('./whisper');
-const { CONFIDENCE_REVIEW_THRESHOLD } = require('./transactionSchema');
+const { CONFIDENCE_REVIEW_THRESHOLD, isTransaction } = require('./transactionSchema');
 const { MOCK } = require('./mockAI');
 
 // In mock mode the media bytes are never used, so don't hit Twilio for them.
@@ -43,14 +43,22 @@ async function processMessage({ source, body, mediaUrl, mediaType }) {
   const confidence = typeof extraction.confidence_score === 'number'
     ? extraction.confidence_score
     : 0;
-  const needsReview = confidence < CONFIDENCE_REVIEW_THRESHOLD;
 
-  return { source, transcript, extraction, needsReview };
+  // A greeting or bit of small talk is not a failed extraction — it's simply not
+  // a transaction. Callers must not persist these.
+  const recordable = isTransaction(extraction);
+  const needsReview = recordable && confidence < CONFIDENCE_REVIEW_THRESHOLD;
+
+  return { source, transcript, extraction, needsReview, isTransaction: recordable };
 }
 
 // WhatsApp reply matching the tone in CLAUDE.md. (Phase 3 owns the real reply
 // generator + persistence; this keeps the loop closed for testing.)
-function buildReply({ extraction, needsReview }) {
+function buildReply({ extraction, needsReview, isTransaction: recordable }) {
+  if (!recordable) {
+    return "I didn't catch a transaction there. Send me a photo of a receipt, a voice note, or just tell me what you bought or sold — e.g. \"bought stock for 2,400\".";
+  }
+
   const amount = Math.round(Number(extraction.amount) || 0).toLocaleString('en-KE');
   const vendor = extraction.vendor ? `${extraction.vendor}, ` : '';
   const verb = extraction.type === 'sale' ? 'recorded as sale' : `recorded as ${extraction.category}`;

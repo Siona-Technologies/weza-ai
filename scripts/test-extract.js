@@ -16,7 +16,7 @@ const path = require('path');
 const { extractFromReceiptImage, categorizeText } = require('../src/services/claude');
 const { transcribeAudio } = require('../src/services/whisper');
 const { buildReply } = require('../src/services/processMessage');
-const { CONFIDENCE_REVIEW_THRESHOLD } = require('../src/services/transactionSchema');
+const { CONFIDENCE_REVIEW_THRESHOLD, isTransaction } = require('../src/services/transactionSchema');
 const { MOCK } = require('../src/services/mockAI');
 
 // In mock mode the file bytes are ignored, so a missing file is fine.
@@ -74,13 +74,15 @@ async function main() {
     process.exit(1);
   }
 
-  const needsReview = (extraction.confidence_score ?? 0) < CONFIDENCE_REVIEW_THRESHOLD;
+  const recordable = isTransaction(extraction);
+  const needsReview = recordable && (extraction.confidence_score ?? 0) < CONFIDENCE_REVIEW_THRESHOLD;
 
   console.log('\n--- Extracted transaction ---');
   console.log(JSON.stringify(extraction, null, 2));
-  console.log('\nneeds_review:', needsReview);
+  console.log('\nis_transaction:', recordable, recordable ? '' : '(would not be saved)');
+  console.log('needs_review:', needsReview);
   console.log('\nWhatsApp reply would be:');
-  console.log('  ' + buildReply({ extraction, needsReview }));
+  console.log('  ' + buildReply({ extraction, needsReview, isTransaction: recordable }));
   console.log('');
 }
 
