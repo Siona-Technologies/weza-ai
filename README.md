@@ -14,6 +14,7 @@ npm install
 
 # 2. Configure environment
 cp .env.example .env   # then fill in values as needed
+# PowerShell: copy .env.example .env
 
 # 3. Run the server (auto-reload)
 npm run dev
@@ -32,16 +33,33 @@ You can exercise the whole pipeline — classify → extract → (save) → repl
 with **no API keys and no cost** by setting `MOCK_AI=true` in `.env`. Extraction
 is stubbed (keyword heuristics for text, canned results for photo/voice).
 
-```bash
-# One-off, no .env change needed:
-MOCK_AI=true npm run test:extract text "Sold 3 sodas for 150 KES"
-MOCK_AI=true npm run test:extract image ./anything.jpg   # file bytes ignored in mock
-MOCK_AI=true npm run test:extract voice ./anything.ogg
+With `MOCK_AI=true` in `.env`, no prefix is needed on any command:
 
-# Or run the full server + webhook in mock mode:
-MOCK_AI=true npm run dev
+```bash
+node scripts/test-extract.js text "Sold 3 sodas for 150 KES"
+node scripts/test-extract.js image ./anything.jpg   # file bytes ignored in mock
+node scripts/test-extract.js voice ./anything.ogg
+
+npm run dev   # full server + webhook, mock mode
 # then POST to http://localhost:3000/webhook/whatsapp (see fields below)
 ```
+
+To enable mock mode for one command only, without touching `.env` — note that
+**the syntax differs by shell**:
+
+```bash
+# bash / zsh / Git Bash
+MOCK_AI=true npm run dev
+```
+
+```powershell
+# PowerShell — no inline VAR=value prefix exists; set it as a statement first
+$env:MOCK_AI="true"; npm run dev
+$env:MOCK_AI=""              # unset it again
+```
+
+A shell variable **overrides** `.env` (dotenv never clobbers an existing env
+var), so if `$env:MOCK_AI` is set, it wins over the file for that whole session.
 
 **Levels of local testing:**
 
