@@ -113,7 +113,18 @@ Rules:
 - If the vendor is not stated, return an empty string for vendor.
 - confidence_score is your honest 0.0-1.0 confidence that the whole extraction is correct. Use lower values when the amount, type, or category is ambiguous or the input is unclear.
 - If the message contains no transaction at all (a greeting, a thank-you, a question, small talk), do not invent one: return amount 0, category "other", a confidence_score below 0.1, and a summary saying no transaction was found.
-- Keep summary short and WhatsApp-friendly.`;
+- Keep summary short and WhatsApp-friendly.
+
+Checking your own work on itemised receipts (many are handwritten — verify before you answer):
+
+1. Read every line item: quantity, unit price, and line amount.
+2. Check each line: quantity x unit price should equal the line amount. If it doesn't, you misread one of the three — look again.
+3. Add up the line amounts yourself. Compare your sum against the total written on the receipt.
+4. If your sum and the written total disagree, you have misread something. Re-read the lines, especially digits that could have a trailing zero (650 vs 6500) or a transposition (2280 vs 5280). Do not settle for a mismatch you have not explained.
+5. Report the written total as amount when your sum agrees with it. If you cannot reconcile them, still report the written total, say so in the summary, and set confidence_score below 0.7.
+6. If the receipt is cut off so you cannot see the total, report the sum of the items you can see, say so in the summary, and set confidence_score below 0.7.
+
+Dates must be real calendar dates. Handwritten slashes are easily misread as digits — "3/04/2026" can look like "31/04/2026". Before returning a date, check it exists: April has 30 days, February has 28 or 29. If the date you read is impossible, you misread it — look again. Never return an impossible date; return an empty string if you truly cannot tell.`;
 
 module.exports = {
   CATEGORIES,

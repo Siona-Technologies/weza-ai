@@ -4,8 +4,29 @@
 
 const { getPool } = require('../db/pool');
 
+// A date the model misread can be impossible ("2026-04-31" — April has 30 days).
+// Postgres rejects it with "date/time field value out of range", which the
+// caller's catch would swallow: the owner is told "Got it" while nothing is
+// saved. A bad date must not cost us the whole transaction, so drop just the
+// date and keep the row. The raw value survives in raw_extraction either way.
 function toDateOrNull(value) {
   if (!value || !String(value).trim()) return null;
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+  if (!match) return null;
+
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date rolls impossible values over (Apr 31 -> May 1), so a round-trip that
+  // doesn't come back identical means the input wasn't a real calendar date.
+  const isReal = date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+
+  if (!isReal) {
+    console.warn(`[transactions] dropping impossible transaction_date "${value}"`);
+    return null;
+  }
   return value; // 'YYYY-MM-DD' string; Postgres casts to DATE
 }
 
