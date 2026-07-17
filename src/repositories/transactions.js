@@ -30,12 +30,28 @@ function toDateOrNull(value) {
   return value; // 'YYYY-MM-DD' string; Postgres casts to DATE
 }
 
-async function insertTransaction({ businessId, source, mediaUrl, extraction, needsReview }) {
+// Has this message already been turned into a transaction? Lets the webhook skip
+// a redundant (and slow, and paid-for) AI call when a message arrives twice.
+// This is the cheap check; the UNIQUE index is the actual guarantee.
+async function findByMessageSid(messageSid) {
+  if (!messageSid) return null;
+  const res = await getPool().query(
+    'SELECT * FROM transactions WHERE message_sid = $1',
+    [messageSid],
+  );
+  return res.rows[0] || null;
+}
+
+// Returns the inserted row, or null if this messageSid was already recorded —
+// ON CONFLICT DO NOTHING makes a duplicate a no-op rather than an error, so two
+// concurrent deliveries of the same message can't both write.
+async function insertTransaction({ businessId, source, mediaUrl, extraction, needsReview, messageSid }) {
   const res = await getPool().query(
     `INSERT INTO transactions
        (business_id, type, amount, category, vendor, raw_source, raw_media_url,
-        raw_extraction, confidence_score, needs_review, transaction_date)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        raw_extraction, confidence_score, needs_review, transaction_date, message_sid)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (message_sid) DO NOTHING
      RETURNING *`,
     [
       businessId,
@@ -49,9 +65,10 @@ async function insertTransaction({ businessId, source, mediaUrl, extraction, nee
       extraction.confidence_score,
       needsReview,
       toDateOrNull(extraction.transaction_date),
+      messageSid || null,
     ],
   );
-  return res.rows[0];
+  return res.rows[0] || null;
 }
 
 // Running per-business totals (CLAUDE.md MVP scope). Used by the reply and,
@@ -71,4 +88,4 @@ async function getRunningTotals(businessId) {
   };
 }
 
-module.exports = { insertTransaction, getRunningTotals };
+module.exports = { insertTransaction, getRunningTotals, findByMessageSid };

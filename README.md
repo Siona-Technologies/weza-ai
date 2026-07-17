@@ -87,11 +87,37 @@ Turn `MOCK_AI` off (or remove it) to use the real Claude/Whisper path.
 4. Join the sandbox from your phone (send the `join <code>` message shown in the
    console), then send a text, photo, or voice note. Watch the server logs.
 
+Note that ngrok's free tier issues a **new URL every restart**, so step 3 has to
+be repeated each session. The `join` code expires after 72 hours.
+
 ### Optional: signature validation
 
 Set `TWILIO_AUTH_TOKEN` and `PUBLIC_URL` (your ngrok/Render base URL) in `.env`
 to enforce Twilio request-signature validation. If either is unset, validation
 is skipped so sandbox testing works out of the box.
+
+### How replies are sent
+
+**Twilio gives a webhook 15 seconds. Receipt extraction takes 10–23s.** Replying
+with the result would mean replying after Twilio has hung up: the transaction is
+saved, the owner sees nothing, they resend — and a resend is a new message, so
+it becomes a second transaction and the books double-count silently.
+
+So the webhook **acknowledges immediately** (empty `<Response/>`, ~200ms) and the
+reply is sent afterwards as a separate outbound message over Twilio's REST API,
+once the work is actually finished.
+
+This needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` **and**
+`TWILIO_WHATSAPP_NUMBER` — a number to send *from*, which TwiML replies never
+needed. Without all three, the webhook logs a warning and falls back to replying
+in the response, which keeps local `curl` testing working but will time out on
+photos.
+
+`MessageSid` is stored on each transaction under a UNIQUE index, so a redelivered
+webhook can't write the same transaction twice. Note this guards against Twilio
+*redelivering* a message — it can't help if the owner photographs the same
+receipt again, since that's a genuinely new message. Getting the reply to them
+reliably is what prevents that.
 
 ## AI extraction (Phase 2)
 

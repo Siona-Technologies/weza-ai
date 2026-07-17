@@ -40,6 +40,18 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_raw_extraction ON transactions USING GIN (raw_extraction);
 
+-- The Twilio MessageSid of the message this transaction came from.
+--
+-- Idempotency key. If the owner resends a receipt (or a webhook is delivered
+-- twice), the same MessageSid arrives again — without this, that becomes a
+-- second identical transaction and the books silently double-count. Enforced in
+-- the database rather than in code so a race between two concurrent deliveries
+-- can't slip through. NULLs don't conflict in Postgres, so rows written before
+-- this column existed are unaffected.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS message_sid VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_sid
+  ON transactions (message_sid);
+
 CREATE TABLE IF NOT EXISTS weekly_summaries (
   id SERIAL PRIMARY KEY,
   business_id INT NOT NULL REFERENCES businesses(id),
