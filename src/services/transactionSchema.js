@@ -110,9 +110,17 @@ Rules:
 - Amounts are in Kenyan Shillings (KES). Return the number only.
 - category MUST be exactly one of: ${CATEGORIES.join(', ')}. Never invent a new category. If nothing fits, use "other".
 - If the vendor is not stated, return an empty string for vendor.
-- confidence_score is your honest 0.0-1.0 confidence that the whole extraction is correct. Use lower values when the amount, type, or category is ambiguous or the input is unclear. If any field you are returning is a guess rather than something you read, your confidence must reflect that.
 - If the message contains no transaction at all (a greeting, a thank-you, a question, small talk), do not invent one: return amount 0, category "other", a confidence_score below 0.1, and a summary saying no transaction was found.
 - Keep summary short and WhatsApp-friendly.
+
+confidence_score — what it measures:
+
+It is your honest 0.0-1.0 confidence that the transaction you are recording is correct: the amount above all, then whether it is a sale or an expense, then the category. Those are the fields that go in the owner's books. Anything below 0.8 asks the owner to stop and check the entry by hand, so treat their attention as worth something — flag what is genuinely doubtful, not what was merely awkward to read.
+
+- Score what you are returning, not what you had to work through. A creased, handwritten, badly-lit receipt whose total you verified is a confident extraction. Difficulty is not doubt.
+- If your own sum of the line items matches the written total, the amount has been confirmed twice, independently. That is strong evidence and should score 0.9 or above, however messy the paper was — even if individual lines were hard to read, and even if some are crossed out.
+- An empty date or an empty vendor is not uncertainty. Those fields are absent, which is a correct answer, and they must not pull the score down. You are not being marked on how much you found.
+- Lower it only when the amount itself is in doubt: you could not reconcile the total, the receipt is cut off before it, the figure is genuinely ambiguous, or the type or category is a guess.
 
 Checking your own work on itemised receipts (many are handwritten — verify before you answer):
 
@@ -120,8 +128,10 @@ Checking your own work on itemised receipts (many are handwritten — verify bef
 2. Check each line: quantity x unit price should equal the line amount. If it doesn't, you misread one of the three — look again.
 3. Add up the line amounts yourself. Compare your sum against the total written on the receipt.
 4. If your sum and the written total disagree, you have misread something. Re-read the lines, especially digits that could have a trailing zero (650 vs 6500) or a transposition (2280 vs 5280). Do not settle for a mismatch you have not explained.
-5. Report the written total as amount when your sum agrees with it. If you cannot reconcile them, still report the written total, say so in the summary, and set confidence_score below 0.7.
-6. If the receipt is cut off so you cannot see the total, report the sum of the items you can see, say so in the summary, and set confidence_score below 0.7.
+5. Report the written total as amount when your sum agrees with it. Two independent readings agreeing is strong evidence: score 0.9 or above.
+6. If your sum and the written total genuinely disagree after you have re-read them, something is misread and you do not know which. Report the written total, say so in the summary, and set confidence_score below 0.7. This is a real conflict and the owner should check it.
+7. If you simply could not add the lines up — some are crossed out, overwritten, or illegible — but the written total itself is perfectly clear, that is not a conflict. You have no evidence anything is wrong; you just lack a second confirmation. Report the written total, note in the summary that you could not verify it against the items, and score it around 0.85. Do not treat "I could not check it" as "it looks wrong".
+8. If the receipt is cut off so the total isn't visible at all, report the sum of the items you can see, say so in the summary, and set confidence_score below 0.7 — you are reporting a floor, not the amount.
 
 Dates (read this before returning transaction_date):
 
