@@ -15,6 +15,17 @@ const { Pool, types } = require('pg');
 const PG_DATE_OID = 1082;
 types.setTypeParser(PG_DATE_OID, (value) => value);
 
+// TIMESTAMP (without time zone) has the same problem, one column over.
+//
+// Our timestamps are written by CURRENT_TIMESTAMP against a Postgres session in
+// UTC, so the stored value *is* UTC — but pg parses it as local time, making a
+// row written seconds ago read as three hours old in Kenya (UTC+3). That already
+// broke the 'fix' command's 15-minute window once (every pending fix expired
+// immediately); created_at would have gone the same way in the weekly summary.
+// Parse it as the UTC it actually is.
+const PG_TIMESTAMP_OID = 1114;
+types.setTypeParser(PG_TIMESTAMP_OID, (value) => new Date(value.replace(' ', 'T') + 'Z'));
+
 let pool;
 
 function isDbConfigured() {
