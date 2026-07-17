@@ -12,6 +12,7 @@ const {
   buildCorrectionPrompt,
 } = require('./transactionSchema');
 const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
+const { aiClientOptions } = require('./aiClientOptions');
 
 // Default to the most capable model; override with CLAUDE_MODEL if needed.
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-8';
@@ -25,7 +26,7 @@ let client;
 function getClient() {
   if (!client) {
     // Reads ANTHROPIC_API_KEY from the environment.
-    client = new Anthropic();
+    client = new Anthropic(aiClientOptions('claude'));
   }
   return client;
 }

@@ -4,6 +4,7 @@
 const OpenAI = require('openai');
 const { toFile } = require('openai');
 const { MOCK, mockTranscript } = require('./mockAI');
+const { aiClientOptions } = require('./aiClientOptions');
 
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'whisper-1';
 
@@ -11,7 +12,7 @@ let client;
 function getClient() {
   if (!client) {
     // Reads OPENAI_API_KEY from the environment.
-    client = new OpenAI();
+    client = new OpenAI(aiClientOptions('whisper'));
   }
   return client;
 }

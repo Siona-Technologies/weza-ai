@@ -12,6 +12,7 @@
 const OpenAI = require('openai');
 const { OUTPUT_SCHEMA, SYSTEM_PROMPT, buildCorrectionPrompt } = require('./transactionSchema');
 const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
+const { aiClientOptions } = require('./aiClientOptions');
 
 // gpt-5.6-terra balances accuracy against latency; -sol is stronger but slower
 // (latency is already the binding constraint — see the 15s Twilio webhook
@@ -25,7 +26,7 @@ let client;
 function getClient() {
   if (!client) {
     // Reads OPENAI_API_KEY from the environment — the same key whisper.js uses.
-    client = new OpenAI();
+    client = new OpenAI(aiClientOptions('openai'));
   }
   return client;
 }

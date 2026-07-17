@@ -160,6 +160,24 @@ Handwritten receipts are the hard case and the one that decides this — a vendo
 that reads printed invoices perfectly can still lose on a creased handwritten
 one. Compare on those before switching.
 
+### Timeouts and retries
+
+Both SDKs already retry `408`, `409`, `429` and `5xx` with exponential backoff,
+honouring `retry-after`. There is deliberately **no retry loop of our own** — a
+second layer would multiply against theirs (3 × 3 = 9 attempts during an outage)
+instead of adding resilience.
+
+What we do set is the defaults, in `src/services/aiClientOptions.js`:
+
+| Setting | Default | Why |
+|---|---|---|
+| `AI_TIMEOUT_MS` | `45000` | The SDK default is **10 minutes**. Since replies are async, a hung request just leaves the owner with no answer and no error. Real extractions take 4–23s. |
+| `AI_MAX_RETRIES` | `2` | SDK default. Worst case before the owner is told we failed ≈ timeout × 3 + backoff. |
+
+Retries are logged (`[claude] ... retrying, 1 attempts remaining`); ordinary
+requests aren't, so a retry stands out as the signal it is. Auth failures (401)
+are never retried — that's a dead key, not a bad minute.
+
 ## Database (Phase 3)
 
 Transactions are persisted to PostgreSQL. Each message finds-or-creates a
