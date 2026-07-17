@@ -45,7 +45,11 @@ async function findByMessageSid(messageSid) {
 // Returns the inserted row, or null if this messageSid was already recorded —
 // ON CONFLICT DO NOTHING makes a duplicate a no-op rather than an error, so two
 // concurrent deliveries of the same message can't both write.
-async function insertTransaction({ businessId, source, mediaUrl, extraction, needsReview, messageSid }) {
+// `transactionDate` is decided by the caller (processMessage.effectiveTransactionDate),
+// not read off the extraction: a text message with no stated date still happened
+// today, while an unreadable date on a photo must stay NULL rather than be
+// invented.
+async function insertTransaction({ businessId, source, mediaUrl, extraction, needsReview, messageSid, transactionDate }) {
   const res = await getPool().query(
     `INSERT INTO transactions
        (business_id, type, amount, category, vendor, raw_source, raw_media_url,
@@ -64,7 +68,7 @@ async function insertTransaction({ businessId, source, mediaUrl, extraction, nee
       JSON.stringify(extraction),
       extraction.confidence_score,
       needsReview,
-      toDateOrNull(extraction.transaction_date),
+      toDateOrNull(transactionDate !== undefined ? transactionDate : extraction.transaction_date),
       messageSid || null,
     ],
   );
@@ -88,12 +92,19 @@ async function findLatestForBusiness(businessId) {
 // Overwrite a transaction with a corrected extraction. needs_review is cleared:
 // the owner has just told us what it should be, and they're the authority on
 // their own books — there's nobody left to confirm it with.
+//
+// transaction_date uses COALESCE deliberately. A correction only mentions what's
+// wrong, so the corrected extraction usually carries the model's original (often
+// empty) date — writing that straight back would erase a date we'd already
+// defaulted or read, just because the owner fixed the amount. Only overwrite
+// when the correction actually supplies a date.
 async function updateTransactionFromExtraction(id, extraction) {
   const res = await getPool().query(
     `UPDATE transactions
         SET type = $2, amount = $3, category = $4, vendor = $5,
             raw_extraction = $6, confidence_score = $7,
-            needs_review = FALSE, transaction_date = $8
+            needs_review = FALSE,
+            transaction_date = COALESCE($8, transaction_date)
       WHERE id = $1
       RETURNING *`,
     [

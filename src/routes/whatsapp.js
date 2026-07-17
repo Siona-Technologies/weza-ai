@@ -60,6 +60,7 @@ async function saveTransaction(reqBody, result) {
       extraction: result.extraction,
       needsReview: result.needsReview,
       messageSid: reqBody.MessageSid,
+      transactionDate: result.transactionDate,
     });
     // null means the UNIQUE index rejected a duplicate MessageSid — the
     // transaction was already recorded, so this is a no-op, not a failure.
