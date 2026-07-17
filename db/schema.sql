@@ -74,3 +74,10 @@ CREATE TABLE IF NOT EXISTS weekly_summaries (
   est_vat DECIMAL(10,2),
   generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- One summary per business per week. The job is expected to be re-run — a cron
+-- that fires twice, or a manual re-send after a failure — and each run must
+-- update that week's row rather than pile up duplicates the owner would be
+-- messaged about again.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_summaries_business_week
+  ON weekly_summaries (business_id, week_start);

@@ -200,6 +200,46 @@ web service's `DATABASE_URL` env var, and run `npm run migrate` (or add it as a
 build/deploy step). Set the service **Root Directory** to the backend folder if
 a separate frontend is ever added (CLAUDE.md deploy conventions).
 
+## Weekly summary
+
+```bash
+npm run summary                       # last complete week, sends over WhatsApp
+npm run summary -- --dry-run          # print what would be sent, send nothing
+npm run summary -- --this-week        # the week in progress (testing)
+npm run summary -- --week=2026-07-06  # a specific week (must be a Monday)
+```
+
+Run it from a scheduler (Render Cron, or plain cron) rather than an in-process
+timer, so it doesn't depend on the web service being awake. Weeks start Monday,
+in **Africa/Nairobi** — Render runs UTC, and a summary generated at 00:30 in
+Kenya would otherwise be filed to the previous week.
+
+Businesses with no transactions that week are skipped; nobody needs telling they
+recorded nothing. Re-runs update that week's row rather than duplicating it
+(UNIQUE on `business_id, week_start`), so a cron that fires twice is harmless.
+
+Transactions are counted by `transaction_date`, falling back to the day they were
+captured. That fallback matters: a photo whose date the model couldn't read
+stores NULL (we don't invent dates), and without it those receipts would fall out
+of every week forever.
+
+### Two things to know before relying on it
+
+**Est. VAT is 16% of sales, with no credit for input VAT** — matching the worked
+example in CLAUDE.md (45,000 sales, 12,000 expenses → "Est. VAT: 7,200"). A
+VAT-registered business actually owes output minus input VAT, which on those
+numbers is 5,280, so this **overstates** the liability. It's labelled "Est." and
+most of the target segment isn't VAT-registered, so it reads as an exposure
+estimate rather than a filing figure. `estimateVat()` in
+`src/services/weeklySummary.js` is the one line to change.
+
+**Sending needs an approved template.** WhatsApp only allows free-form messages
+within 24 hours of the owner's last message. The weekly summary is
+business-initiated by definition, so outside that window Meta requires a
+pre-approved template — on Twilio exactly as on Meta directly. Until one is
+approved, summaries reach only owners who happened to message in the last day.
+Twilio reports this as error `63016`, which the job calls out explicitly.
+
 ## Project layout
 
 ```
