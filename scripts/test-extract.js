@@ -1,19 +1,24 @@
 // Local test harness for the Phase 2 AI pipeline — no Twilio, no ngrok, no
 // WhatsApp needed. Feeds text / a local image / a local audio file straight
-// through Claude + Whisper so you can verify extraction with just API keys.
+// through the AI pipeline so you can verify extraction with just API keys.
 //
 // Usage:
 //   node scripts/test-extract.js text  "Sold 3 sodas for 150 KES"
 //   node scripts/test-extract.js image ./receipt.jpg
 //   node scripts/test-extract.js voice ./note.ogg
 //
-// Needs ANTHROPIC_API_KEY in .env (and OPENAI_API_KEY too for voice).
+// Vision/categorization run on whichever vendor AI_PROVIDER selects, so the same
+// receipt can be scored against both:
+//   $env:AI_PROVIDER="openai"; node scripts/test-extract.js image ./receipt2.png
+//
+// Needs ANTHROPIC_API_KEY or OPENAI_API_KEY in .env depending on AI_PROVIDER;
+// voice always needs OPENAI_API_KEY (Whisper).
 
 require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const { extractFromReceiptImage, categorizeText } = require('../src/services/claude');
+const { extractFromReceiptImage, categorizeText, MODEL, PROVIDER } = require('../src/services/aiProvider');
 const { transcribeAudio } = require('../src/services/whisper');
 const { buildReply } = require('../src/services/processMessage');
 const { CONFIDENCE_REVIEW_THRESHOLD, isTransaction } = require('../src/services/transactionSchema');
@@ -43,11 +48,17 @@ async function main() {
     process.exit(1);
   }
 
+  // Each vendor reads its own key; name the one that's actually missing.
+  const REQUIRED_KEY = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY' }[PROVIDER];
+
   if (MOCK) {
     console.log('(MOCK_AI is on — using stubbed extraction, no API calls)');
-  } else if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('\nANTHROPIC_API_KEY is not set in .env — add it, or set MOCK_AI=true to test without keys.\n');
-    process.exit(1);
+  } else {
+    console.log(`(provider: ${PROVIDER} — model: ${MODEL})`);
+    if (!process.env[REQUIRED_KEY]) {
+      console.error(`\n${REQUIRED_KEY} is not set in .env — needed for AI_PROVIDER=${PROVIDER}. Add it, or set MOCK_AI=true to test without keys.\n`);
+      process.exit(1);
+    }
   }
 
   let extraction;

@@ -97,18 +97,42 @@ is skipped so sandbox testing works out of the box.
 
 Each inbound message is routed by type and turned into one structured transaction:
 
-- **photo** → Claude vision reads the receipt directly (no separate OCR)
-- **voice** → Whisper transcribes → Claude categorizes the transcript
-- **text** → Claude categorizes
+- **photo** → vision reads the receipt directly (no separate OCR)
+- **voice** → Whisper transcribes → the transcript is categorized
+- **text** → categorized directly
 
-Claude uses **structured outputs** so the `category` is always one of the fixed
-values (`stock/inventory, rent, utilities, transport, staff wages, sales, other`)
-— the model can't invent a category. Extractions below a confidence threshold
-(0.7) are flagged `needs_review` and the reply asks the owner to confirm.
+Both vendors use **structured outputs** so the `category` is always one of the
+fixed values (`stock/inventory, rent, utilities, transport, staff wages, sales,
+other`) — the model can't invent a category. Extractions below a confidence
+threshold (0.8) are flagged `needs_review` and the reply asks the owner to
+confirm.
 
-Requires `ANTHROPIC_API_KEY` (and `OPENAI_API_KEY` for voice notes) in `.env`.
-Twilio media URLs are fetched with the account's Basic auth before being sent to
-Claude/Whisper. Persistence to Postgres and the weekly summary land in Phase 3.
+Twilio media URLs are fetched with the account's Basic auth before the bytes are
+sent to the model.
+
+### Choosing the AI provider
+
+Vision + categorization run on whichever vendor `AI_PROVIDER` selects. **Voice is
+always Whisper (OpenAI)** either way, so `OPENAI_API_KEY` is needed regardless.
+
+| `AI_PROVIDER` | Vision + categorization | Key needed |
+|---|---|---|
+| `anthropic` (default) | Claude (`CLAUDE_MODEL`, default `claude-opus-4-8`) | `ANTHROPIC_API_KEY` |
+| `openai` | OpenAI (`OPENAI_MODEL`, default `gpt-5.6-terra`) | `OPENAI_API_KEY` |
+
+Both providers return the identical schema, so nothing downstream changes — the
+flag exists to score them against the same receipts before committing to one:
+
+```powershell
+# Same receipt, both vendors — compare amount, date and confidence
+node scripts/test-extract.js image .\receipt2.png
+$env:AI_PROVIDER="openai"; node scripts/test-extract.js image .\receipt2.png
+$env:AI_PROVIDER=""       # back to the default
+```
+
+Handwritten receipts are the hard case and the one that decides this — a vendor
+that reads printed invoices perfectly can still lose on a creased handwritten
+one. Compare on those before switching.
 
 ## Database (Phase 3)
 

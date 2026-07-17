@@ -1,14 +1,15 @@
 // Orchestrates the Phase 2 pipeline for one inbound WhatsApp message:
 //
-//   photo -> Claude vision            -> structured transaction
-//   voice -> Whisper -> Claude text   -> structured transaction
-//   text  -> Claude text             -> structured transaction
+//   photo -> vision                 -> structured transaction
+//   voice -> Whisper -> categorize  -> structured transaction
+//   text  -> categorize             -> structured transaction
 //
-// Returns the structured extraction plus a needs_review flag. Persisting to
-// Postgres and the weekly summary job come in Phase 3.
+// Vision/categorization run on whichever vendor AI_PROVIDER selects; voice is
+// always Whisper (OpenAI). Returns the structured extraction plus a needs_review
+// flag. Persisting to Postgres and the weekly summary job come in Phase 3.
 
 const { fetchTwilioMedia } = require('./twilioMedia');
-const { extractFromReceiptImage, categorizeText } = require('./claude');
+const { extractFromReceiptImage, categorizeText } = require('./aiProvider');
 const { transcribeAudio } = require('./whisper');
 const { CONFIDENCE_REVIEW_THRESHOLD, isTransaction } = require('./transactionSchema');
 const { MOCK } = require('./mockAI');
