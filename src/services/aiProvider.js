@@ -27,6 +27,7 @@ const provider = PROVIDERS[NAME]();
 module.exports = {
   extractFromReceiptImage: provider.extractFromReceiptImage,
   categorizeText: provider.categorizeText,
+  correctTransaction: provider.correctTransaction,
   MODEL: provider.MODEL,
   PROVIDER: NAME,
 };

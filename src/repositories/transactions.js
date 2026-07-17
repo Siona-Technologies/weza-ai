@@ -71,6 +71,54 @@ async function insertTransaction({ businessId, source, mediaUrl, extraction, nee
   return res.rows[0] || null;
 }
 
+async function findById(id) {
+  const res = await getPool().query('SELECT * FROM transactions WHERE id = $1', [id]);
+  return res.rows[0] || null;
+}
+
+// The entry the owner most likely means by "fix" — their last one.
+async function findLatestForBusiness(businessId) {
+  const res = await getPool().query(
+    'SELECT * FROM transactions WHERE business_id = $1 ORDER BY id DESC LIMIT 1',
+    [businessId],
+  );
+  return res.rows[0] || null;
+}
+
+// Overwrite a transaction with a corrected extraction. needs_review is cleared:
+// the owner has just told us what it should be, and they're the authority on
+// their own books — there's nobody left to confirm it with.
+async function updateTransactionFromExtraction(id, extraction) {
+  const res = await getPool().query(
+    `UPDATE transactions
+        SET type = $2, amount = $3, category = $4, vendor = $5,
+            raw_extraction = $6, confidence_score = $7,
+            needs_review = FALSE, transaction_date = $8
+      WHERE id = $1
+      RETURNING *`,
+    [
+      id,
+      extraction.type,
+      extraction.amount,
+      extraction.category,
+      extraction.vendor || null,
+      JSON.stringify(extraction),
+      extraction.confidence_score,
+      toDateOrNull(extraction.transaction_date),
+    ],
+  );
+  return res.rows[0] || null;
+}
+
+// The owner confirming a flagged entry is right after all ('review').
+async function confirmTransaction(id) {
+  const res = await getPool().query(
+    'UPDATE transactions SET needs_review = FALSE WHERE id = $1 RETURNING *',
+    [id],
+  );
+  return res.rows[0] || null;
+}
+
 // Running per-business totals (CLAUDE.md MVP scope). Used by the reply and,
 // later, the weekly summary job.
 async function getRunningTotals(businessId) {
@@ -88,4 +136,12 @@ async function getRunningTotals(businessId) {
   };
 }
 
-module.exports = { insertTransaction, getRunningTotals, findByMessageSid };
+module.exports = {
+  insertTransaction,
+  getRunningTotals,
+  findByMessageSid,
+  findById,
+  findLatestForBusiness,
+  updateTransactionFromExtraction,
+  confirmTransaction,
+};

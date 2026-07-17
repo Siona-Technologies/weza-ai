@@ -87,4 +87,25 @@ function mockTranscript() {
   return 'I sold ten loaves of bread for 500 shillings today';
 }
 
-module.exports = { MOCK, mockCategorize, mockReceipt, mockTranscript };
+// Mock 'fix': apply an amount if the owner's message has one, and a category if
+// a keyword matches. Everything else survives, which is the behaviour that
+// actually matters — a correction must not silently rewrite the whole entry.
+function mockCorrection(original, correctionText) {
+  const amount = guessAmount(correctionText);
+  const hinted = CATEGORY_HINTS.find(([re]) => re.test(correctionText));
+  const understood = amount > 0 || Boolean(hinted);
+
+  const corrected = {
+    ...original,
+    amount: amount > 0 ? amount : original.amount,
+    category: hinted ? hinted[1] : original.category,
+    confidence_score: understood ? 0.95 : 0.05,
+    _mock: true,
+  };
+  corrected.summary = understood
+    ? `${corrected.amount} KES ${corrected.category} (corrected)`
+    : 'Correction not understood.';
+  return corrected;
+}
+
+module.exports = { MOCK, mockCategorize, mockReceipt, mockTranscript, mockCorrection };

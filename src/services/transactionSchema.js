@@ -136,6 +136,30 @@ An empty transaction_date is a correct and expected answer, not a failure. A wro
 
 If you are about to return a date, ask yourself once more: did I actually read these digits, or did I decide they were probably this? If it is the second one, return "".`;
 
+/**
+ * The user-side prompt for the 'fix' command: the owner has told us an entry is
+ * wrong and said what it should be. Lives here, next to the schema, so both
+ * providers word the correction identically.
+ *
+ * A correction is not a fresh extraction. The owner mentioned one thing; the
+ * rest of the entry was already right and must survive untouched.
+ */
+function buildCorrectionPrompt(original, correctionText) {
+  return `The business owner previously recorded this transaction:
+
+${JSON.stringify(original, null, 2)}
+
+They say it is wrong, and sent this correction:
+
+"${correctionText}"
+
+Apply their correction and return the complete corrected transaction.
+
+- Change only what their message actually addresses. Every other field keeps its existing value, exactly as it is above.
+- The owner is the authority on their own books. A value they state directly is not something you read or guessed — it is a fact. Set confidence_score to 0.95 or higher for a correction you understood.
+- If their message does not tell you what to change — it's a greeting, a question, small talk, or you simply cannot tell what they mean — do not invent a correction and do not guess at one. Return the original values exactly as they are, with a confidence_score below 0.1 and a summary saying the correction was not understood.`;
+}
+
 module.exports = {
   CATEGORIES,
   TRANSACTION_TYPES,
@@ -144,4 +168,5 @@ module.exports = {
   isTransaction,
   OUTPUT_SCHEMA,
   SYSTEM_PROMPT,
+  buildCorrectionPrompt,
 };

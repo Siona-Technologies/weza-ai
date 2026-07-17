@@ -9,8 +9,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const {
   OUTPUT_SCHEMA,
   SYSTEM_PROMPT,
+  buildCorrectionPrompt,
 } = require('./transactionSchema');
-const { MOCK, mockCategorize, mockReceipt } = require('./mockAI');
+const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
 
 // Default to the most capable model; override with CLAUDE_MODEL if needed.
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-8';
@@ -81,4 +82,12 @@ async function categorizeText(text) {
   ]);
 }
 
-module.exports = { extractFromReceiptImage, categorizeText, MODEL };
+// An existing transaction + what the owner says is wrong -> corrected transaction.
+async function correctTransaction(original, correctionText) {
+  if (MOCK) return mockCorrection(original, correctionText);
+  return runExtraction([
+    { type: 'text', text: buildCorrectionPrompt(original, correctionText) },
+  ]);
+}
+
+module.exports = { extractFromReceiptImage, categorizeText, correctTransaction, MODEL };

@@ -52,6 +52,19 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS message_sid VARCHAR(64);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_sid
   ON transactions (message_sid);
 
+-- Correction state for the 'fix' command.
+--
+-- Every confirmation reply ends "Reply 'fix' if wrong", so an owner who spots a
+-- bad amount answers "fix" and then says what it should be. That second message
+-- ("2400") would otherwise look like a brand new transaction and be recorded as
+-- one — leaving the wrong entry in place and adding a wrong one beside it. These
+-- columns remember which transaction we're waiting on a correction for.
+--
+-- Deliberately no FK: businesses is created before transactions, and a plain id
+-- keeps the schema order simple. A stale id is harmless (the lookup just misses).
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_transaction_id INT;
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_at TIMESTAMP;
+
 CREATE TABLE IF NOT EXISTS weekly_summaries (
   id SERIAL PRIMARY KEY,
   business_id INT NOT NULL REFERENCES businesses(id),

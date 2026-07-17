@@ -10,8 +10,8 @@
 // never invent a category (CLAUDE.md).
 
 const OpenAI = require('openai');
-const { OUTPUT_SCHEMA, SYSTEM_PROMPT } = require('./transactionSchema');
-const { MOCK, mockCategorize, mockReceipt } = require('./mockAI');
+const { OUTPUT_SCHEMA, SYSTEM_PROMPT, buildCorrectionPrompt } = require('./transactionSchema');
+const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
 
 // gpt-5.6-terra balances accuracy against latency; -sol is stronger but slower
 // (latency is already the binding constraint — see the 15s Twilio webhook
@@ -86,4 +86,12 @@ async function categorizeText(text) {
   ]);
 }
 
-module.exports = { extractFromReceiptImage, categorizeText, MODEL };
+// An existing transaction + what the owner says is wrong -> corrected transaction.
+async function correctTransaction(original, correctionText) {
+  if (MOCK) return mockCorrection(original, correctionText);
+  return runExtraction([
+    { type: 'text', text: buildCorrectionPrompt(original, correctionText) },
+  ]);
+}
+
+module.exports = { extractFromReceiptImage, categorizeText, correctTransaction, MODEL };
