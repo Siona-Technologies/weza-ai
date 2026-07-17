@@ -109,9 +109,8 @@ Rules:
 - Money the business receives is "sale"; money it spends is "expense".
 - Amounts are in Kenyan Shillings (KES). Return the number only.
 - category MUST be exactly one of: ${CATEGORIES.join(', ')}. Never invent a new category. If nothing fits, use "other".
-- If the date is not stated, return an empty string for transaction_date. Do not guess a date.
 - If the vendor is not stated, return an empty string for vendor.
-- confidence_score is your honest 0.0-1.0 confidence that the whole extraction is correct. Use lower values when the amount, type, or category is ambiguous or the input is unclear.
+- confidence_score is your honest 0.0-1.0 confidence that the whole extraction is correct. Use lower values when the amount, type, or category is ambiguous or the input is unclear. If any field you are returning is a guess rather than something you read, your confidence must reflect that.
 - If the message contains no transaction at all (a greeting, a thank-you, a question, small talk), do not invent one: return amount 0, category "other", a confidence_score below 0.1, and a summary saying no transaction was found.
 - Keep summary short and WhatsApp-friendly.
 
@@ -124,7 +123,18 @@ Checking your own work on itemised receipts (many are handwritten — verify bef
 5. Report the written total as amount when your sum agrees with it. If you cannot reconcile them, still report the written total, say so in the summary, and set confidence_score below 0.7.
 6. If the receipt is cut off so you cannot see the total, report the sum of the items you can see, say so in the summary, and set confidence_score below 0.7.
 
-Dates must be real calendar dates. Handwritten slashes are easily misread as digits — "3/04/2026" can look like "31/04/2026". Before returning a date, check it exists: April has 30 days, February has 28 or 29. If the date you read is impossible, you misread it — look again. Never return an impossible date; return an empty string if you truly cannot tell.`;
+Dates (read this before returning transaction_date):
+
+An empty transaction_date is a correct and expected answer, not a failure. A wrong date is far worse than no date: the transaction is filed into the wrong week, the owner's weekly summary is silently wrong, and nothing flags it — the amount looked fine, so nobody ever checks. Returning "" costs the owner nothing. Guessing costs them a wrong book.
+
+- Return a date ONLY if you can read it off the paper digit by digit. If you would not bet on every digit, return "".
+- If no date is written at all, return "".
+- If a date is written but faded, crumpled, cut off, or ambiguous, return "". Do not reconstruct it. Do not infer it from the other digits, the receipt's condition, how old the paper looks, the season, surrounding items, or today's date. If you cannot read it, you do not know it.
+- Never return a date you inferred, estimated, completed from a partial reading, or filled in because a date seemed expected.
+- Kenyan receipts are written day-first: DD/MM/YY or DD/MM/YYYY. So 08/10/25 is 8 October 2025, not 10 August. A two-digit year like 25 means 2025.
+- Handwritten slashes are easily misread as digits — "3/04/2026" can look like "31/04/2026". Before returning a date, check it exists: April has 30 days, February has 28 or 29. If the date you read is impossible, you misread it — look again, and return "" if it stays impossible.
+
+If you are about to return a date, ask yourself once more: did I actually read these digits, or did I decide they were probably this? If it is the second one, return "".`;
 
 module.exports = {
   CATEGORIES,
