@@ -13,6 +13,7 @@ const OpenAI = require('openai');
 const { OUTPUT_SCHEMA, SYSTEM_PROMPT, buildCorrectionPrompt } = require('./transactionSchema');
 const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
 const { aiClientOptions } = require('./aiClientOptions');
+const { recordUsage } = require('./usage');
 
 // gpt-5.6-terra balances accuracy against latency; -sol is stronger but slower
 // (latency is already the binding constraint — see the 15s Twilio webhook
@@ -31,7 +32,7 @@ function getClient() {
   return client;
 }
 
-async function runExtraction(userContent) {
+async function runExtraction(userContent, kind = 'categorize') {
   const response = await getClient().chat.completions.create({
     model: MODEL,
     messages: [
@@ -46,6 +47,14 @@ async function runExtraction(userContent) {
         schema: OUTPUT_SCHEMA,
       },
     },
+  });
+
+  recordUsage({
+    kind,
+    provider: 'openai',
+    model: MODEL,
+    inputTokens: response.usage?.prompt_tokens ?? null,
+    outputTokens: response.usage?.completion_tokens ?? null,
   });
 
   const message = response.choices?.[0]?.message;
@@ -73,7 +82,7 @@ async function extractFromReceiptImage(buffer, mediaType) {
       type: 'text',
       text: 'This is a receipt or invoice photo from a business owner. Extract the transaction.',
     },
-  ]);
+  ], 'vision');
 }
 
 // Text (typed message, or a Whisper transcript) -> structured transaction.
@@ -92,7 +101,7 @@ async function correctTransaction(original, correctionText) {
   if (MOCK) return mockCorrection(original, correctionText);
   return runExtraction([
     { type: 'text', text: buildCorrectionPrompt(original, correctionText) },
-  ]);
+  ], 'correct');
 }
 
 module.exports = { extractFromReceiptImage, categorizeText, correctTransaction, MODEL };

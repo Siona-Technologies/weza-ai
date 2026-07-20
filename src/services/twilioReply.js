@@ -36,6 +36,12 @@ async function sendWhatsApp(to, body) {
     to,
     body,
   });
+
+  // Outbound messages are billed per message, and they're easy to forget in a
+  // cost model precisely because they're the cheap part — until a chatty review
+  // walk sends six of them for one receipt.
+  recordUsage({ kind: 'whatsapp_out', provider: 'twilio', messages: 1 });
+
   return message.sid;
 }
 

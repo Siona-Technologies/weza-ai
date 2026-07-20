@@ -80,6 +80,35 @@ ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_at TIMESTAMP;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_review_transaction_id INT;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_review_at TIMESTAMP;
 
+-- What each inbound message actually consumed: tokens, audio seconds, outbound
+-- messages. One row per billable call, several rows per message (a voice note is
+-- a transcription AND a categorization AND a reply).
+--
+-- Kept separate from transactions rather than added as columns, because usage
+-- exists for messages that never become transactions — a greeting still costs a
+-- categorization call, and those are exactly the costs that would otherwise go
+-- unnoticed. business_id is nullable for the same reason: we may not have
+-- identified a business yet when the call happens.
+--
+-- Deliberately stores usage, not money. Prices change and vary by account, so
+-- cost is computed at report time from configured rates (src/services/costRates.js).
+-- Storing a dollar figure would freeze a guess into the record permanently.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id),
+  message_sid VARCHAR(64),
+  kind VARCHAR(32) NOT NULL,      -- vision | categorize | correct | transcribe | whatsapp_out
+  provider VARCHAR(32),           -- openai | anthropic | twilio
+  model VARCHAR(64),
+  input_tokens INT,
+  output_tokens INT,
+  audio_seconds NUMERIC(10,2),
+  messages INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_business_created
+  ON usage_events (business_id, created_at);
+
 CREATE TABLE IF NOT EXISTS weekly_summaries (
   id SERIAL PRIMARY KEY,
   business_id INT NOT NULL REFERENCES businesses(id),
