@@ -1,0 +1,76 @@
+# Render Blueprint — CLAUDE.md build order step 4 ("Deploy to Render with real
+# Twilio webhook"). Render reads this when you create a Blueprint from the repo,
+# so the web service and the weekly cron are defined together rather than clicked
+# in by hand twice.
+#
+# Every secret below is `sync: false`, meaning Render prompts for the value and
+# it is never stored in this file. Nothing here is a secret; keep it that way.
+#
+# The database is Neon, not Render Postgres, so DATABASE_URL is entered by hand
+# rather than linked from a Render database block.
+
+services:
+  - type: web
+    name: weza-ai
+    runtime: node
+    plan: free
+    # If a frontend is ever added, this repo stops being backend-only and this
+    # needs to become the backend subfolder (CLAUDE.md deploy conventions).
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      # package.json says >=18 so local dev on any recent Node stays warning-free;
+      # this pins what Render actually builds with, so a deploy months from now
+      # doesn't silently move to a new major.
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: MOCK_AI
+        value: "false"
+      - key: AI_PROVIDER
+        value: openai
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      # Base URL of this service, used for Twilio signature validation. Set it
+      # after the first deploy, once Render has assigned the .onrender.com host.
+      - key: PUBLIC_URL
+        sync: false
+
+  - type: cron
+    name: weza-ai-weekly-summary
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: npm run summary
+    # Monday 04:00 UTC = Monday 07:00 in Nairobi, so the summary lands at the
+    # start of the owner's working week. Render schedules in UTC; the job's own
+    # week boundaries are Africa/Nairobi, and "last complete week" resolves to
+    # the Monday-Sunday that just ended. Do not move this earlier than 03:00 UTC
+    # or it will run before Monday has started in Kenya and summarise the wrong
+    # week.
+    schedule: "0 4 * * 1"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false
+      - key: DATABASE_URL
+        sync: false
