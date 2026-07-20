@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Runtime / temp
+tmp/
+*.tmp
+
+# Local test media — real receipts and voice notes contain business data
+# (vendors, amounts, dates). Keep them off GitHub.
+samples/
+receipt.*
+note.*
+*.jpg
+*.jpeg
+*.png
+*.ogg
+*.m4a
