@@ -90,7 +90,14 @@ CREATE TABLE weekly_summaries (
 ```
 
 `needs_review` is the trust mechanism: any extraction below a confidence threshold
-(start at 0.7) gets flagged for the owner to confirm rather than silently recorded wrong.
+gets flagged for the owner to confirm rather than silently recorded wrong.
+
+The threshold started at 0.7 and was **tuned to 0.8** against real model output: clean
+inputs score 0.90+, while genuinely ambiguous ones land in the 0.6–0.75 band (a 45,000 KES
+fridge categorized as "other" scored 0.72). 0.7 let that through by 0.02; 0.8 catches it
+without flagging anything clean. Defined once in `src/services/transactionSchema.js` as
+`CONFIDENCE_REVIEW_THRESHOLD` — change it there, and keep the figure quoted in the
+extraction prompt in step with it.
 
 ## MVP scope
 
