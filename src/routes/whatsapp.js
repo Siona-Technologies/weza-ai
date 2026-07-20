@@ -2,7 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { processMessage, buildReply } = require('../services/processMessage');
 const { sendWhatsApp, isOutboundConfigured } = require('../services/twilioReply');
-const { parseCommand } = require('../services/commands');
+const { parseCommand, isAffirmative } = require('../services/commands');
 const { correctTransaction } = require('../services/aiProvider');
 const { isTransaction } = require('../services/transactionSchema');
 const { isDbConfigured } = require('../db/pool');
@@ -11,6 +11,9 @@ const {
   setAwaitingFix,
   clearAwaitingFix,
   pendingFixTransactionId,
+  setAwaitingReview,
+  clearAwaitingReview,
+  pendingReviewTransactionId,
 } = require('../repositories/businesses');
 const {
   insertTransaction,
@@ -19,6 +22,7 @@ const {
   findLatestForBusiness,
   updateTransactionFromExtraction,
   confirmTransaction,
+  listNeedsReview,
 } = require('../repositories/transactions');
 
 const router = express.Router();
@@ -120,6 +124,34 @@ async function applyCorrection(business, tx, correctionText) {
   return `Updated — ${describe(updated)}.`;
 }
 
+// Put the next flagged entry in front of the owner, or close the walk if there
+// are none left. `prefix` carries the outcome of what they just did ("Confirmed.
+// ", "Updated — 5,400 KES, transport. ") so each reply is one message rather
+// than two.
+//
+// The queue is re-read from the database on every step instead of being held in
+// memory: the owner can send a new receipt mid-walk, and re-reading means a
+// newly flagged entry joins the queue rather than the walk ending on a stale
+// list. It also means nothing to reconcile if a step fails.
+async function reviewStep(business, prefix = '') {
+  const flagged = await listNeedsReview(business.id);
+
+  if (flagged.length === 0) {
+    await clearAwaitingReview(business.id);
+    // "All done" only makes sense if they just did something. Someone who says
+    // 'review' with a clean book has finished nothing.
+    return prefix
+      ? `${prefix}All done — nothing left to review.`
+      : "Nothing needs checking right now — every entry is confirmed.";
+  }
+
+  const next = flagged[0];
+  await setAwaitingReview(business.id, next.id);
+
+  const remaining = flagged.length === 1 ? '1 entry' : `${flagged.length} entries`;
+  return `${prefix}${remaining} to check:\n${describe(next)}.\nReply 'yes' to confirm, or 'fix ...' to correct it.`;
+}
+
 // 'fix' and 'review': the two words every reply invites the owner to send back.
 async function handleCommand(body, command) {
   if (!isDbConfigured()) return NO_DB_TEXT;
@@ -128,16 +160,19 @@ async function handleCommand(body, command) {
     phone: businessPhone(body),
     ownerName: body.ProfileName,
   });
+
+  // 'review' walks the flagged entries one at a time. It confirms nothing on its
+  // own — the owner has to look at each entry and say so, which is the entire
+  // point of the needs_review flag.
+  if (command.name === 'review') {
+    await clearAwaitingFix(business.id);
+    return reviewStep(business);
+  }
+
   const last = await findLatestForBusiness(business.id);
 
   if (!last) {
     return "I don't have any entries for you yet. Send a photo of a receipt, a voice note, or just tell me what you bought or sold.";
-  }
-
-  if (command.name === 'review') {
-    await confirmTransaction(last.id);
-    await clearAwaitingFix(business.id);
-    return `Confirmed — ${describe(last)}. Thanks.`;
   }
 
   // Bare "fix": show them what we have and wait for the correction.
@@ -161,6 +196,34 @@ async function pendingCorrection(body) {
   if (!txId) return null;
   const tx = await findById(txId);
   return tx ? { business, tx } : null;
+}
+
+// Is there a review walk open, and which entry is on screen?
+async function pendingReview(body) {
+  if (!isDbConfigured()) return null;
+  const business = await findOrCreateBusiness({
+    phone: businessPhone(body),
+    ownerName: body.ProfileName,
+  });
+  const txId = await pendingReviewTransactionId(business.id);
+  if (!txId) return null;
+  const tx = await findById(txId);
+  return tx ? { business, tx } : null;
+}
+
+// Correct an entry and, if a review walk is open, move on to the next one.
+//
+// applyCorrection re-arms the fix state when it couldn't tell what to change, so
+// that is what we check: still armed means the owner was asked again and the
+// walk must stay where it is. Advancing on a correction we failed to apply would
+// skip the entry they were trying to fix.
+async function correctThenContinue(business, tx, correctionText) {
+  const message = await applyCorrection(business, tx, correctionText);
+
+  if (await pendingFixTransactionId(business.id)) return message;
+  if (!(await pendingReviewTransactionId(business.id))) return message;
+
+  return reviewStep(business, `${message} `);
 }
 
 // The slow part: extract, persist, and work out what to say back.
@@ -188,12 +251,43 @@ async function handleMessage(body, source) {
 }
 
 // One inbound message -> the text to reply with. A message is either a command
-// ('fix' / 'review'), the answer to a correction we asked for, or a transaction.
+// ('fix' / 'review'), a step in an open review walk, the answer to a correction
+// we asked for, or a new transaction.
 async function handleInbound(body, source) {
   // Only text can be a command. A photo sent mid-correction is a new receipt,
   // not an answer to "what should it be?".
   if (source === 'text') {
     const command = parseCommand(body.Body);
+
+    // 'review' always starts (or restarts) the walk from the top of the queue.
+    if (command && command.name === 'review') {
+      console.log('[webhook] command', { name: 'review' });
+      return handleCommand(body, command);
+    }
+
+    // Mid-walk, replies are about the entry on screen — not the newest entry,
+    // which is what 'fix' means everywhere else.
+    const review = await pendingReview(body);
+    if (review) {
+      if (isAffirmative(body.Body)) {
+        await confirmTransaction(review.tx.id);
+        console.log('[webhook] review: confirmed', { transactionId: review.tx.id });
+        return reviewStep(review.business, 'Confirmed. ');
+      }
+
+      if (command && command.name === 'fix') {
+        // "fix 5400" — correct this entry and carry on down the queue.
+        if (command.argument) {
+          console.log('[webhook] review: correcting', { transactionId: review.tx.id });
+          return correctThenContinue(review.business, review.tx, command.argument);
+        }
+        // Bare "fix" — ask what it should be. Their answer arrives as an
+        // ordinary message and rejoins the walk through pendingCorrection below.
+        await setAwaitingFix(review.business.id, review.tx.id);
+        return `${describe(review.tx)}. What should it be? Reply with the correction — e.g. "2400", "it was rent", or "Naivas".`;
+      }
+    }
+
     if (command) {
       console.log('[webhook] command', { name: command.name, argument: command.argument });
       return handleCommand(body, command);
@@ -202,7 +296,7 @@ async function handleInbound(body, source) {
     const pending = await pendingCorrection(body);
     if (pending) {
       console.log('[webhook] treating message as a correction', { transactionId: pending.tx.id });
-      return applyCorrection(pending.business, pending.tx, (body.Body || '').trim());
+      return correctThenContinue(pending.business, pending.tx, (body.Body || '').trim());
     }
   }
 

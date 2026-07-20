@@ -14,6 +14,21 @@ const FIX_RE = /^fix\b[\s:,-]*(.*)$/is;
 // would hijack messages the owner never meant as commands.
 const REVIEW_RE = /^(review|confirm)\b[\s:,-]*$/i;
 
+// "yes", "yeah", "ok", "sawa", "ndio", "correct" — an owner agreeing that the
+// entry we just put in front of them is right.
+//
+// This is deliberately NOT part of parseCommand. Out of nowhere, "ok" is
+// ordinary conversation and treating it as a command would hijack messages the
+// owner never meant that way — the same reasoning that keeps REVIEW_RE strict.
+// It is only consulted while a review walk is open, where we have just asked a
+// direct yes-or-no question and a bare "sawa" can only sensibly be the answer.
+// Context, not vocabulary, is what makes it safe.
+const AFFIRMATIVE_RE = /^(y|yes|yeah|yep|ok|okay|correct|right|sawa|ndio|ndiyo)\b[\s.!]*$/i;
+
+function isAffirmative(text) {
+  return AFFIRMATIVE_RE.test((text || '').trim());
+}
+
 /**
  * Returns { name: 'fix', argument: '2400' } | { name: 'review' } | null.
  * `argument` is whatever followed "fix" on the same line — empty when the owner
@@ -31,4 +46,4 @@ function parseCommand(text) {
   return null;
 }
 
-module.exports = { parseCommand };
+module.exports = { parseCommand, isAffirmative };

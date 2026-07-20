@@ -62,10 +62,56 @@ async function pendingFixTransactionId(businessId) {
   return res.rows[0] ? res.rows[0].awaiting_fix_transaction_id : null;
 }
 
+// How long a review walk stays open. Longer than the fix window because a walk
+// is several exchanges, not one: an owner clearing four flagged entries while
+// serving customers can easily take twenty minutes between replies, and having
+// the session expire underneath them would silently turn their next "yes" into
+// an ordinary message.
+const AWAITING_REVIEW_TTL_MINUTES = 30;
+
+async function setAwaitingReview(businessId, transactionId) {
+  await getPool().query(
+    `UPDATE businesses
+        SET awaiting_review_transaction_id = $2,
+            awaiting_review_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [businessId, transactionId],
+  );
+}
+
+async function clearAwaitingReview(businessId) {
+  await getPool().query(
+    `UPDATE businesses
+        SET awaiting_review_transaction_id = NULL,
+            awaiting_review_at = NULL
+      WHERE id = $1`,
+    [businessId],
+  );
+}
+
+// The entry currently on screen in a review walk, or null if there isn't one or
+// it's gone stale. Age compared in SQL for the same timezone reason as
+// pendingFixTransactionId above — see that comment before changing this.
+async function pendingReviewTransactionId(businessId) {
+  const res = await getPool().query(
+    `SELECT awaiting_review_transaction_id
+       FROM businesses
+      WHERE id = $1
+        AND awaiting_review_transaction_id IS NOT NULL
+        AND awaiting_review_at > CURRENT_TIMESTAMP - ($2 || ' minutes')::interval`,
+    [businessId, String(AWAITING_REVIEW_TTL_MINUTES)],
+  );
+  return res.rows[0] ? res.rows[0].awaiting_review_transaction_id : null;
+}
+
 module.exports = {
   findOrCreateBusiness,
   setAwaitingFix,
   clearAwaitingFix,
   pendingFixTransactionId,
   AWAITING_FIX_TTL_MINUTES,
+  setAwaitingReview,
+  clearAwaitingReview,
+  pendingReviewTransactionId,
+  AWAITING_REVIEW_TTL_MINUTES,
 };

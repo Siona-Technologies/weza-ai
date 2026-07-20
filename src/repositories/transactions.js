@@ -130,6 +130,22 @@ async function confirmTransaction(id) {
   return res.rows[0] || null;
 }
 
+// Every entry still awaiting the owner's confirmation, oldest first.
+//
+// Oldest first so a review walk clears the backlog in the order it built up —
+// the entry the owner is least likely to still remember is the one to put in
+// front of them while they're paying attention, and it keeps the queue from
+// growing a permanently unreachable tail.
+async function listNeedsReview(businessId) {
+  const res = await getPool().query(
+    `SELECT * FROM transactions
+      WHERE business_id = $1 AND needs_review = TRUE
+      ORDER BY created_at ASC, id ASC`,
+    [businessId],
+  );
+  return res.rows;
+}
+
 // Running per-business totals (CLAUDE.md MVP scope). Used by the reply and,
 // later, the weekly summary job.
 async function getRunningTotals(businessId) {
@@ -155,4 +171,5 @@ module.exports = {
   findLatestForBusiness,
   updateTransactionFromExtraction,
   confirmTransaction,
+  listNeedsReview,
 };

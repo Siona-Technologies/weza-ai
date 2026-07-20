@@ -136,6 +136,35 @@ confirm.
 Twilio media URLs are fetched with the account's Basic auth before the bytes are
 sent to the model.
 
+### The two owner commands: `fix` and `review`
+
+**`fix`** corrects the most recent entry, either in one message (`fix 2400`) or
+as a short exchange (`fix` → "what should it be?" → `it was rent`).
+
+**`review`** walks every flagged entry, oldest first, one at a time:
+
+```
+owner: review
+bot:   3 entries to check:
+       27,650 KES, BRAZ ELECTRONIC SUPPLIERS, stock/inventory.
+       Reply 'yes' to confirm, or 'fix ...' to correct it.
+owner: yes
+bot:   Confirmed. 2 entries to check: ...
+```
+
+It confirms nothing on its own. The point of `needs_review` is that a person
+looks at the entry, and a single "confirmed all 3" reply is a rubber stamp rather
+than a check — so each entry needs its own answer.
+
+Mid-walk, `fix` targets **the entry on screen**, not the newest one, and the walk
+resumes automatically once the correction lands. A correction the model couldn't
+understand leaves the walk where it is rather than skipping the entry. Plain
+agreement (`yes`, `ok`, `sawa`, `ndio`) only counts as confirmation while a walk
+is open — out of nowhere, "ok" is ordinary conversation, not a command.
+
+The walk expires after 30 minutes (longer than `fix`'s 15, since a walk is
+several exchanges), so an abandoned review can't swallow tomorrow's messages.
+
 ### Choosing the AI provider
 
 Vision + categorization run on whichever vendor `AI_PROVIDER` selects. **Voice is

@@ -65,6 +65,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_sid
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_transaction_id INT;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_at TIMESTAMP;
 
+-- Review state for the 'review' command.
+--
+-- 'review' walks the owner through every flagged entry one at a time rather than
+-- confirming them in bulk: the whole point of needs_review is that a human looks
+-- at it, and a single "confirmed all 3" reply is a rubber stamp, not a check.
+-- Walking one at a time means each reply ('yes' / 'fix ...') has to be matched
+-- against the entry currently on screen, so these columns remember which one
+-- that is.
+--
+-- Separate from awaiting_fix_*: an owner can be mid-review AND answering "what
+-- should it be?" for the entry under review, and collapsing both into one pair
+-- of columns would lose track of the walk as soon as they corrected something.
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_review_transaction_id INT;
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_review_at TIMESTAMP;
+
 CREATE TABLE IF NOT EXISTS weekly_summaries (
   id SERIAL PRIMARY KEY,
   business_id INT NOT NULL REFERENCES businesses(id),
