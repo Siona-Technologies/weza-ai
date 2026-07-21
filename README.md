@@ -269,6 +269,45 @@ pre-approved template — on Twilio exactly as on Meta directly. Until one is
 approved, summaries reach only owners who happened to message in the last day.
 Twilio reports this as error `63016`, which the job calls out explicitly.
 
+## Cost per transaction
+
+```bash
+npm run cost               # last 30 days, per business
+npm run cost -- --days=7
+```
+
+Answers the question pricing depends on: **if a shop sends 100 receipts a month,
+what does that cost us?** Every inbound message records what it consumed —
+vision/categorization tokens, Whisper audio seconds, outbound messages — into
+`usage_events`, one row per billable call.
+
+Usage is measured exactly. **Prices are not hardcoded**, because they change,
+vary by region and vary by account; a plausible-looking default would produce a
+confidently wrong report that pricing decisions then get made on. Rates come from
+the environment (see `.env.example`) and anything unset is reported as UNKNOWN,
+with the report stating plainly that its total is an under-count:
+
+```
+!!  INCOMPLETE — these rates are not configured, so the figures above
+    are an UNDER-COUNT, not a total:
+      COST_ANTHROPIC_INPUT_PER_MTOK
+```
+
+Fill the rates in from your own OpenAI, Anthropic and Twilio invoices. Set
+`USD_TO_KES` to also see shillings.
+
+Two things worth knowing before reading a report:
+
+**The system prompt dominates short messages.** A five-word text still sends the
+whole extraction prompt — about 2,500 input tokens against ~100 output. Cost per
+message is therefore fairly flat regardless of message length, and photos are the
+expensive case because the image adds to that floor.
+
+**Usage tracking can never fail a message.** It runs inside an
+`AsyncLocalStorage` context and every write is best-effort — if the database is
+down or a provider stops returning usage, the receipt is still processed and
+answered. Bookkeeping about bookkeeping must not be what loses someone's receipt.
+
 ## Project layout
 
 ```

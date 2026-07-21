@@ -13,6 +13,7 @@ const {
 } = require('./transactionSchema');
 const { MOCK, mockCategorize, mockReceipt, mockCorrection } = require('./mockAI');
 const { aiClientOptions } = require('./aiClientOptions');
+const { recordUsage } = require('./usage');
 
 // Default to the most capable model; override with CLAUDE_MODEL if needed.
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-8';
@@ -41,7 +42,7 @@ function parseStructured(response) {
   return JSON.parse(textBlock.text);
 }
 
-async function runExtraction(userContent) {
+async function runExtraction(userContent, kind = 'categorize') {
   const response = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2048,
@@ -53,6 +54,15 @@ async function runExtraction(userContent) {
     },
     messages: [{ role: 'user', content: userContent }],
   });
+
+  recordUsage({
+    kind,
+    provider: 'anthropic',
+    model: MODEL,
+    inputTokens: response.usage?.input_tokens ?? null,
+    outputTokens: response.usage?.output_tokens ?? null,
+  });
+
   return parseStructured(response);
 }
 
@@ -69,7 +79,7 @@ async function extractFromReceiptImage(buffer, mediaType) {
       type: 'text',
       text: 'This is a receipt or invoice photo from a business owner. Extract the transaction.',
     },
-  ]);
+  ], 'vision');
 }
 
 // Text (typed message, or a Whisper transcript) -> structured transaction.
@@ -88,7 +98,7 @@ async function correctTransaction(original, correctionText) {
   if (MOCK) return mockCorrection(original, correctionText);
   return runExtraction([
     { type: 'text', text: buildCorrectionPrompt(original, correctionText) },
-  ]);
+  ], 'correct');
 }
 
 module.exports = { extractFromReceiptImage, categorizeText, correctTransaction, MODEL };

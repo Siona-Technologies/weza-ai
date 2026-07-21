@@ -6,6 +6,8 @@ const { parseCommand, isAffirmative } = require('../services/commands');
 const { correctTransaction } = require('../services/aiProvider');
 const { isTransaction } = require('../services/transactionSchema');
 const { isDbConfigured } = require('../db/pool');
+const { withUsageTracking, collectUsage } = require('../services/usage');
+const { insertUsageEvents } = require('../repositories/usage');
 const {
   findOrCreateBusiness,
   setAwaitingFix,
@@ -303,24 +305,48 @@ async function handleInbound(body, source) {
   return handleMessage(body, source);
 }
 
+// Bank what this message consumed. Best-effort by design: a cost report is
+// never worth failing a receipt over, so every failure here is swallowed after
+// logging. Called last, so the outbound reply is counted too.
+async function persistUsage(body) {
+  try {
+    const events = collectUsage();
+    if (events.length === 0 || !isDbConfigured()) return;
+    const business = await findOrCreateBusiness({
+      phone: businessPhone(body),
+      ownerName: body.ProfileName,
+    });
+    await insertUsageEvents(events, {
+      businessId: business.id,
+      messageSid: body.MessageSid,
+    });
+    console.log('[webhook] usage recorded', { events: events.length, messageSid: body.MessageSid });
+  } catch (err) {
+    console.error('[webhook] usage tracking failed (ignored):', err.message);
+  }
+}
+
 // Async path: the webhook has already answered Twilio, so nothing here can be
 // reported back through the response. Everything must be caught and logged, and
 // the owner is told over WhatsApp instead.
 async function processAndReply(body, source) {
-  let text;
-  try {
-    text = await handleInbound(body, source);
-  } catch (err) {
-    console.error('[webhook] processing failed:', err.message);
-    text = ERROR_TEXT;
-  }
-  try {
-    const sid = await sendWhatsApp(body.From, text);
-    console.log('[webhook] reply sent', { to: body.From, sid });
-  } catch (err) {
-    // The owner gets nothing. Loud, because it's invisible from their side.
-    console.error('[webhook] FAILED TO SEND REPLY:', err.message);
-  }
+  return withUsageTracking(async () => {
+    let text;
+    try {
+      text = await handleInbound(body, source);
+    } catch (err) {
+      console.error('[webhook] processing failed:', err.message);
+      text = ERROR_TEXT;
+    }
+    try {
+      const sid = await sendWhatsApp(body.From, text);
+      console.log('[webhook] reply sent', { to: body.From, sid });
+    } catch (err) {
+      // The owner gets nothing. Loud, because it's invisible from their side.
+      console.error('[webhook] FAILED TO SEND REPLY:', err.message);
+    }
+    await persistUsage(body);
+  });
 }
 
 /**
@@ -409,12 +435,17 @@ router.post('/whatsapp', async (req, res) => {
   // (~3s); a photo would still outrun Twilio's 15s.
   if (!isOutboundConfigured()) {
     console.warn('[webhook] TWILIO_WHATSAPP_NUMBER not set — replying synchronously (photos may time out).');
-    try {
-      return reply(res, await handleInbound(req.body, source));
-    } catch (err) {
-      console.error('[webhook] processing failed:', err.message);
-      return reply(res, ERROR_TEXT);
-    }
+    return withUsageTracking(async () => {
+      try {
+        const text = await handleInbound(req.body, source);
+        await persistUsage(req.body);
+        return reply(res, text);
+      } catch (err) {
+        console.error('[webhook] processing failed:', err.message);
+        await persistUsage(req.body);
+        return reply(res, ERROR_TEXT);
+      }
+    });
   }
 
   // Answer Twilio now, work afterwards. Deliberately not awaited — the response
