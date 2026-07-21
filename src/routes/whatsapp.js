@@ -26,6 +26,8 @@ const {
   confirmTransaction,
   listNeedsReview,
 } = require('../repositories/transactions');
+const { getTotalsBetween } = require('../repositories/summaries');
+const { estimateVat, resolvePeriod, buildSummaryMessage } = require('../services/weeklySummary');
 
 const router = express.Router();
 
@@ -154,7 +156,26 @@ async function reviewStep(business, prefix = '') {
   return `${prefix}${remaining} to check:\n${describe(next)}.\nReply 'yes' to confirm, or 'fix ...' to correct it.`;
 }
 
-// 'fix' and 'review': the two words every reply invites the owner to send back.
+// 'summary' — the owner's totals, on demand, for the period they asked about.
+//
+// The scheduled weekly job pushes the last *complete* week. This answers the
+// question someone asks mid-week about the week they're in, so bare 'summary'
+// means the week in progress.
+async function summaryStep(business, period) {
+  const { start, end, label, includeVat } = resolvePeriod(period);
+  const totals = await getTotalsBetween(business.id, start, end);
+
+  if (totals.transactionCount === 0) {
+    return `${label}: nothing recorded yet. Send a photo of a receipt, a voice note, or just tell me what you bought or sold.`;
+  }
+
+  return buildSummaryMessage(
+    { ...totals, estVat: estimateVat(totals.totalSales) },
+    { label, includeVat, includeNet: true },
+  );
+}
+
+// 'fix', 'review' and 'summary': the words the owner can send us.
 async function handleCommand(body, command) {
   if (!isDbConfigured()) return NO_DB_TEXT;
 
@@ -169,6 +190,13 @@ async function handleCommand(body, command) {
   if (command.name === 'review') {
     await clearAwaitingFix(business.id);
     return reviewStep(business);
+  }
+
+  // Reading the totals changes nothing, so it deliberately leaves an open fix or
+  // review walk exactly where it was — an owner who checks their figures
+  // mid-review can carry on answering afterwards.
+  if (command.name === 'summary') {
+    return summaryStep(business, command.argument);
   }
 
   const last = await findLatestForBusiness(business.id);

@@ -3,8 +3,9 @@
 const { getPool } = require('../db/pool');
 
 /**
- * Totals for one business over the week beginning `weekStart` (a 'YYYY-MM-DD'
- * Monday), plus how many entries are still awaiting the owner's confirmation.
+ * Totals for one business over the half-open date range [start, end) — both
+ * 'YYYY-MM-DD' — plus how many entries are still awaiting the owner's
+ * confirmation. Half-open so adjacent periods can't double-count a day.
  *
  * Transactions are counted by transaction_date, falling back to when we captured
  * them. transaction_date is NULL when a photo's date couldn't be read — we
@@ -17,7 +18,7 @@ const { getPool } = require('../db/pool');
  * date is taken — otherwise anything captured between midnight and 3am in Kenya
  * lands in the previous week.
  */
-async function getWeeklyTotals(businessId, weekStart) {
+async function getTotalsBetween(businessId, start, end) {
   const res = await getPool().query(
     `WITH dated AS (
        SELECT type, amount, needs_review,
@@ -35,8 +36,8 @@ async function getWeeklyTotals(businessId, weekStart) {
        COUNT(*)                                                 AS transaction_count
        FROM dated
       WHERE effective_date >= $2::date
-        AND effective_date <  $2::date + INTERVAL '7 days'`,
-    [businessId, weekStart],
+        AND effective_date <  $3::date`,
+    [businessId, start, end],
   );
   const row = res.rows[0];
   return {
@@ -45,6 +46,13 @@ async function getWeeklyTotals(businessId, weekStart) {
     needsReviewCount: Number(row.needs_review_count),
     transactionCount: Number(row.transaction_count),
   };
+}
+
+// The scheduled job's shape: the seven days from a Monday.
+async function getWeeklyTotals(businessId, weekStart) {
+  const end = new Date(`${weekStart}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 7);
+  return getTotalsBetween(businessId, weekStart, end.toISOString().slice(0, 10));
 }
 
 // Idempotent: re-running the job for a week updates that week's row rather than
@@ -70,4 +78,4 @@ async function listBusinesses() {
   return res.rows;
 }
 
-module.exports = { getWeeklyTotals, upsertWeeklySummary, listBusinesses };
+module.exports = { getTotalsBetween, getWeeklyTotals, upsertWeeklySummary, listBusinesses };

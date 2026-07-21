@@ -136,7 +136,7 @@ confirm.
 Twilio media URLs are fetched with the account's Basic auth before the bytes are
 sent to the model.
 
-### The two owner commands: `fix` and `review`
+### The owner commands: `fix`, `review` and `summary`
 
 **`fix`** corrects the most recent entry, either in one message (`fix 2400`) or
 as a short exchange (`fix` → "what should it be?" → `it was rent`).
@@ -164,6 +164,37 @@ is open — out of nowhere, "ok" is ordinary conversation, not a command.
 
 The walk expires after 30 minutes (longer than `fix`'s 15, since a walk is
 several exchanges), so an abandoned review can't swallow tomorrow's messages.
+
+**`summary`** answers with the owner's totals on demand. `summary`, `totals`,
+`total` and `report` all work, optionally followed by a period:
+
+```
+owner: summary
+bot:   This week: 40,000 KES sales, 27,650 KES expenses. Net: 12,350 KES.
+       Est. VAT: 6,400 KES.
+owner: summary today
+bot:   Today: nothing recorded yet. Send a photo of a receipt, a voice note,
+       or just tell me what you bought or sold.
+```
+
+Periods: nothing (the week in progress), `today` (or `leo`), `last week`, and
+`month`. Filler words are tolerated — "totals for the month" is the same as
+`summary month`.
+
+Bare `summary` means the week **in progress**, not the last complete one: it
+answers the question someone asks mid-week. The scheduled job is the opposite —
+it reports the week just finished.
+
+Anything after the command that isn't a recognised period means it was never a
+report request, and the message falls through to normal extraction. `total 5000`
+records a 5,000 transaction; it does not print a report. Swallowing a real
+transaction as a mistyped command would lose the owner's money, so the match is
+kept deliberately narrow.
+
+The daily figure omits Est. VAT. VAT is a periodic liability, not a daily one,
+and putting it against a single day's takings invites reading it as money owed
+today. Reading the totals also leaves an open `fix` or `review` walk exactly
+where it was.
 
 ### Choosing the AI provider
 
