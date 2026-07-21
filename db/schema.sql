@@ -65,6 +65,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_sid
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_transaction_id INT;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_at TIMESTAMP;
 
+-- Soft delete for the 'undo' command.
+--
+-- Financial records are not hard-deleted. An owner who removes the wrong entry
+-- by mistake has destroyed part of their own books, and there is nothing left to
+-- recover it from — so the row stays and every query filters it out instead.
+-- That is also what makes 'restore' possible without extra state: the entry to
+-- put back is simply the most recently deleted one for that business.
+--
+-- Deliberately NOT filtered in the message_sid dedupe check: if WhatsApp
+-- redelivers a message whose transaction was deleted, that is still the same
+-- message, and resurrecting it would undo the owner's decision.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_transactions_live
+  ON transactions (business_id, deleted_at);
+
 -- Review state for the 'review' command.
 --
 -- 'review' walks the owner through every flagged entry one at a time rather than
