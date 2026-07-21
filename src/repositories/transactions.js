@@ -53,12 +53,16 @@ async function findByMessageSid(messageSid) {
 // not read off the extraction: a text message with no stated date still happened
 // today, while an unreadable date on a photo must stay NULL rather than be
 // invented.
-async function insertTransaction({ businessId, source, mediaUrl, extraction, needsReview, messageSid, transactionDate }) {
+async function insertTransaction({
+  businessId, source, mediaUrl, extraction, needsReview, messageSid, transactionDate,
+  imageUrl = null, imagePublicId = null,
+}) {
   const res = await getPool().query(
     `INSERT INTO transactions
        (business_id, type, amount, category, vendor, raw_source, raw_media_url,
-        raw_extraction, confidence_score, needs_review, transaction_date, message_sid)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        raw_extraction, confidence_score, needs_review, transaction_date, message_sid,
+        image_url, image_public_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT (message_sid) DO NOTHING
      RETURNING *`,
     [
@@ -74,6 +78,8 @@ async function insertTransaction({ businessId, source, mediaUrl, extraction, nee
       needsReview,
       toDateOrNull(transactionDate !== undefined ? transactionDate : extraction.transaction_date),
       messageSid || null,
+      imageUrl,
+      imagePublicId,
     ],
   );
   return res.rows[0] || null;

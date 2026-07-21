@@ -28,6 +28,7 @@ const {
   softDeleteTransaction,
   restoreLastDeleted,
 } = require('../repositories/transactions');
+const { storeReceiptImage } = require('../services/imageStore');
 const { getTotalsBetween } = require('../repositories/summaries');
 const { estimateVat, resolvePeriod, buildSummaryMessage } = require('../services/weeklySummary');
 
@@ -63,6 +64,17 @@ async function saveTransaction(reqBody, result) {
   try {
     const phone = (reqBody.From || '').replace('whatsapp:', '');
     const business = await findOrCreateBusiness({ phone, ownerName: reqBody.ProfileName });
+
+    // Keep the receipt itself, not just the numbers off it. Never throws, and
+    // returns null if storage isn't configured or the upload failed — the
+    // transaction is worth more than the picture, so it is saved either way.
+    const image = result.imageBuffer
+      ? await storeReceiptImage(result.imageBuffer, {
+        businessId: business.id,
+        messageSid: reqBody.MessageSid,
+      })
+      : null;
+
     const tx = await insertTransaction({
       businessId: business.id,
       source: result.source,
@@ -71,6 +83,8 @@ async function saveTransaction(reqBody, result) {
       needsReview: result.needsReview,
       messageSid: reqBody.MessageSid,
       transactionDate: result.transactionDate,
+      imageUrl: image && image.url,
+      imagePublicId: image && image.publicId,
     });
     // null means the UNIQUE index rejected a duplicate MessageSid — the
     // transaction was already recorded, so this is a no-op, not a failure.
