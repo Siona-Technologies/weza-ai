@@ -55,9 +55,14 @@ function effectiveTransactionDate(source, extraction) {
 async function processMessage({ source, body, mediaUrl, mediaType }) {
   let extraction;
   let transcript = null;
+  // Held so the caller can keep the receipt without fetching it from Twilio a
+  // second time. Photos only — we transcribe voice notes and have no reason to
+  // keep the audio, which is the more sensitive recording of the two.
+  let imageBuffer = null;
 
   if (source === 'photo') {
     const { buffer, contentType } = await getMedia(mediaUrl);
+    imageBuffer = buffer;
     extraction = await extractFromReceiptImage(buffer, contentType);
   } else if (source === 'voice') {
     const { buffer, contentType } = await getMedia(mediaUrl);
@@ -87,6 +92,7 @@ async function processMessage({ source, body, mediaUrl, mediaType }) {
     extraction,
     needsReview,
     isTransaction: recordable,
+    imageBuffer,
     // Kept beside the extraction rather than written into it, so raw_extraction
     // stays an honest record of what the model actually said.
     transactionDate: effectiveTransactionDate(source, extraction),

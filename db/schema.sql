@@ -65,6 +65,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_sid
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_transaction_id INT;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS awaiting_fix_at TIMESTAMP;
 
+-- Our own copy of the receipt image (Cloudinary).
+--
+-- raw_media_url holds the *Twilio* link the photo arrived on, which needs our
+-- Twilio credentials to open and which Twilio eventually deletes — provenance,
+-- not a record. These two columns are the durable copy: image_public_id is the
+-- one that matters, since authenticated images are fetched via a signed URL
+-- generated from the id rather than from the stored URL.
+--
+-- Both stay NULL when the upload failed or Cloudinary isn't configured. A
+-- missing image must never cost the owner the transaction.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS image_public_id VARCHAR(255);
+
 -- Soft delete for the 'undo' command.
 --
 -- Financial records are not hard-deleted. An owner who removes the wrong entry
