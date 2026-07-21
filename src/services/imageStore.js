@@ -11,6 +11,9 @@
 // generate on demand (see signedUrlFor). Cloudinary's default is public
 // delivery; that would put customer receipts on a guessable public URL.
 //
+// The signed URL does not expire — see signedUrlFor for why, and for what
+// carries the protection instead.
+//
 // RESIDENCY: which region holds the images is an open legal question (Kenya's
 // Data Protection Act constrains moving personal data abroad). It is deliberately
 // not hardcoded — CLOUDINARY_FOLDER and the account's own region carry it, so
@@ -19,11 +22,6 @@
 const cloudinary = require('cloudinary').v2;
 
 const FOLDER = process.env.CLOUDINARY_FOLDER || 'weza-ai/receipts';
-
-// How long a generated view link stays valid. Short by default: these links are
-// produced on request, not stored, so there is no reason for one to outlive the
-// conversation it was made for.
-const SIGNED_URL_TTL_SECONDS = Number(process.env.CLOUDINARY_LINK_TTL_SECONDS || 900);
 
 let configured = false;
 
@@ -101,17 +99,28 @@ async function storeReceiptImage(buffer, { businessId, messageSid }) {
 }
 
 /**
- * A time-limited link to a stored receipt. Authenticated images can't be fetched
- * from their bare URL, so this is how one is ever looked at again.
+ * A signed link to a stored receipt. Authenticated images can't be fetched from
+ * their bare URL, so this is how one is ever looked at again.
+ *
+ * NOT time-limited, despite the obvious way to write it. `expires_at` is
+ * silently ignored by cloudinary.url() for signed delivery URLs — the output is
+ * byte-identical with an expiry, without one, and with a far-future one, which
+ * was verified rather than assumed. Real expiry needs Cloudinary's token-based
+ * authentication, which is an account-level feature we don't have. Claiming a
+ * TTL here would be a security property we don't actually provide.
+ *
+ * What protects the image is that the URL cannot be constructed without the API
+ * secret, and that we never hand it to the owner: 'receipt' sends the photo
+ * itself, so Twilio fetches this URL server-side and re-hosts the image. The
+ * signed link goes from us to Twilio and no further.
  */
-function signedUrlFor(publicId, { expiresInSeconds = SIGNED_URL_TTL_SECONDS } = {}) {
+function signedUrlFor(publicId) {
   if (!publicId || !isImageStoreConfigured()) return null;
   return getClient().url(publicId, {
     type: 'authenticated',
     resource_type: 'image',
     secure: true,
     sign_url: true,
-    expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
   });
 }
 

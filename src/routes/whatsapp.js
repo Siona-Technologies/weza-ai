@@ -22,13 +22,14 @@ const {
   findByMessageSid,
   findById,
   findLatestForBusiness,
+  findLatestWithImage,
   updateTransactionFromExtraction,
   confirmTransaction,
   listNeedsReview,
   softDeleteTransaction,
   restoreLastDeleted,
 } = require('../repositories/transactions');
-const { storeReceiptImage } = require('../services/imageStore');
+const { storeReceiptImage, signedUrlFor, isImageStoreConfigured } = require('../services/imageStore');
 const { getTotalsBetween } = require('../repositories/summaries');
 const { estimateVat, resolvePeriod, buildSummaryMessage } = require('../services/weeklySummary');
 
@@ -172,6 +173,38 @@ async function reviewStep(business, prefix = '') {
   return `${prefix}${remaining} to check:\n${describe(next)}.\nReply 'yes' to confirm, 'fix ...' to correct it, or 'undo' to remove it.`;
 }
 
+// 'receipt' — put the picture back in the chat.
+//
+// Returns { text, mediaUrl } rather than a plain string; every other handler
+// returns a string and both shapes are normalised at the reply boundary.
+//
+// Sends the image itself rather than a link, which matters for more than
+// convenience: Twilio fetches the signed URL server-side, so it never reaches
+// the owner's phone and never leaves our infrastructure. The photo lands in the
+// conversation and stays there, owned by WhatsApp rather than by us.
+async function receiptStep(business, tx) {
+  const target = tx || await findLatestWithImage(business.id);
+
+  if (!target) {
+    if (!isImageStoreConfigured()) {
+      return { text: "I'm not keeping receipt images yet, so there's nothing to show. Photos you send from now on will be saved." };
+    }
+    return { text: "I don't have a receipt image for you. I only keep the photos — entries you sent as text or a voice note have no picture." };
+  }
+
+  if (!target.image_public_id) {
+    return { text: `No picture for that one: ${describe(target)}. It came in as ${target.raw_source === 'photo' ? 'a photo, but before I started keeping them' : `a ${target.raw_source} message`}.` };
+  }
+
+  const url = signedUrlFor(target.image_public_id);
+  if (!url) {
+    return { text: "I can't reach the stored receipts right now. Everything is still recorded — try again shortly." };
+  }
+
+  console.log('[webhook] receipt: sending image', { transactionId: target.id });
+  return { text: `${describe(target)}.`, mediaUrl: url };
+}
+
 // 'undo' — take an entry out of the books.
 //
 // It removes and then tells them how to reverse it, rather than asking "are you
@@ -227,6 +260,12 @@ async function handleCommand(body, command) {
   // mid-review can carry on answering afterwards.
   if (command.name === 'summary') {
     return summaryStep(business, command.argument);
+  }
+
+  // Like 'summary', looking at a receipt changes nothing and leaves any open
+  // walk where it was.
+  if (command.name === 'receipt') {
+    return receiptStep(business, null);
   }
 
   // 'restore' looks past the live entries by definition, so it runs before the
@@ -351,6 +390,14 @@ async function handleInbound(body, source) {
         return reviewStep(review.business, 'Confirmed. ');
       }
 
+      // Mid-walk 'receipt' shows the entry on screen, not the newest photo.
+      // This is the moment the command matters most: the owner has been asked to
+      // confirm a number and wants to see what it was read off. The walk stays
+      // exactly where it is, waiting for their answer.
+      if (command && command.name === 'receipt') {
+        return receiptStep(review.business, review.tx);
+      }
+
       // Mid-walk 'undo' removes the entry on screen, then carries on down the
       // queue — the natural way to clear a duplicate you've just been shown.
       if (command && command.name === 'undo') {
@@ -410,18 +457,27 @@ async function persistUsage(body) {
 // Async path: the webhook has already answered Twilio, so nothing here can be
 // reported back through the response. Everything must be caught and logged, and
 // the owner is told over WhatsApp instead.
+// Handlers return either a plain string or { text, mediaUrl }. Normalising here
+// keeps every handler free to return a bare string, which almost all of them do.
+function asReply(result) {
+  if (result && typeof result === 'object' && 'text' in result) {
+    return { text: result.text, mediaUrl: result.mediaUrl || null };
+  }
+  return { text: result, mediaUrl: null };
+}
+
 async function processAndReply(body, source) {
   return withUsageTracking(async () => {
-    let text;
+    let reply;
     try {
-      text = await handleInbound(body, source);
+      reply = asReply(await handleInbound(body, source));
     } catch (err) {
       console.error('[webhook] processing failed:', err.message);
-      text = ERROR_TEXT;
+      reply = { text: ERROR_TEXT, mediaUrl: null };
     }
     try {
-      const sid = await sendWhatsApp(body.From, text);
-      console.log('[webhook] reply sent', { to: body.From, sid });
+      const sid = await sendWhatsApp(body.From, reply.text, { mediaUrl: reply.mediaUrl });
+      console.log('[webhook] reply sent', { to: body.From, sid, withImage: Boolean(reply.mediaUrl) });
     } catch (err) {
       // The owner gets nothing. Loud, because it's invisible from their side.
       console.error('[webhook] FAILED TO SEND REPLY:', err.message);
@@ -459,10 +515,13 @@ function validateTwilio(req) {
   return twilio.validateRequest(token, signature, url, req.body);
 }
 
-// Reply inside the webhook response (TwiML).
-function reply(res, text) {
+// Reply inside the webhook response (TwiML). Accepts either a string or
+// { text, mediaUrl }, matching the async path.
+function reply(res, result) {
+  const { text, mediaUrl } = asReply(result);
   const twiml = new twilio.twiml.MessagingResponse();
-  twiml.message(text);
+  const message = twiml.message(text);
+  if (mediaUrl) message.media(mediaUrl);
   res.type('text/xml').send(twiml.toString());
 }
 
@@ -518,9 +577,9 @@ router.post('/whatsapp', async (req, res) => {
     console.warn('[webhook] TWILIO_WHATSAPP_NUMBER not set — replying synchronously (photos may time out).');
     return withUsageTracking(async () => {
       try {
-        const text = await handleInbound(req.body, source);
+        const result = await handleInbound(req.body, source);
         await persistUsage(req.body);
-        return reply(res, text);
+        return reply(res, result);
       } catch (err) {
         console.error('[webhook] processing failed:', err.message);
         await persistUsage(req.body);
