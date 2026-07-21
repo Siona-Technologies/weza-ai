@@ -136,7 +136,7 @@ confirm.
 Twilio media URLs are fetched with the account's Basic auth before the bytes are
 sent to the model.
 
-### The owner commands: `fix`, `review` and `summary`
+### The owner commands: `fix`, `review`, `summary` and `undo`
 
 **`fix`** corrects the most recent entry, either in one message (`fix 2400`) or
 as a short exchange (`fix` → "what should it be?" → `it was rent`).
@@ -195,6 +195,34 @@ The daily figure omits Est. VAT. VAT is a periodic liability, not a daily one,
 and putting it against a single day's takings invites reading it as money owed
 today. Reading the totals also leaves an open `fix` or `review` walk exactly
 where it was.
+
+**`undo`** (also `delete`, `remove`, `cancel`) takes an entry out of the books —
+the newest one, or, mid-review, the one on screen:
+
+```
+owner: undo
+bot:   Removed: 134,680 KES, Tronic Kenya Limited, stock/inventory.
+       Reply 'restore' if that was a mistake.
+owner: restore
+bot:   Back in: 134,680 KES, Tronic Kenya Limited, stock/inventory.
+```
+
+**Nothing is actually deleted.** `deleted_at` is set and every query that counts
+money filters the row out. An owner who removes the wrong entry has destroyed
+part of their own books, and a hard delete leaves nothing to recover from — so
+the row stays. `restore` puts back the most recently removed entry, which needs
+no extra state: `deleted_at` is itself the record of what went last.
+
+That is also why `undo` doesn't ask "are you sure?" first. A confirmation step
+costs a round trip on every legitimate delete to guard against a rare mistake;
+because the delete is reversible, the common case stays one message.
+
+Like `review`, only the bare word counts — "delete the old stock 2000" is a
+message about stock and is recorded as one.
+
+The dedupe check on `message_sid` deliberately still sees deleted rows. If
+WhatsApp redelivers a message whose entry the owner removed, that is the same
+message, and re-creating it would quietly overrule them.
 
 ### Choosing the AI provider
 

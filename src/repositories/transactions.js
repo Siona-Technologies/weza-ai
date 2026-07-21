@@ -33,6 +33,10 @@ function toDateOrNull(value) {
 // Has this message already been turned into a transaction? Lets the webhook skip
 // a redundant (and slow, and paid-for) AI call when a message arrives twice.
 // This is the cheap check; the UNIQUE index is the actual guarantee.
+//
+// Deliberately does NOT filter deleted rows. A redelivery of a message the owner
+// has since deleted is still the same message; treating it as new would put the
+// entry back and quietly overrule them.
 async function findByMessageSid(messageSid) {
   if (!messageSid) return null;
   const res = await getPool().query(
@@ -75,15 +79,51 @@ async function insertTransaction({ businessId, source, mediaUrl, extraction, nee
   return res.rows[0] || null;
 }
 
+// Deleted entries are invisible here, so a 'fix' or 'review' walk pointing at
+// one simply finds nothing and moves on rather than editing a removed row.
 async function findById(id) {
-  const res = await getPool().query('SELECT * FROM transactions WHERE id = $1', [id]);
+  const res = await getPool().query(
+    'SELECT * FROM transactions WHERE id = $1 AND deleted_at IS NULL',
+    [id],
+  );
   return res.rows[0] || null;
 }
 
-// The entry the owner most likely means by "fix" — their last one.
+// The entry the owner most likely means by "fix" or "undo" — their last one.
 async function findLatestForBusiness(businessId) {
   const res = await getPool().query(
-    'SELECT * FROM transactions WHERE business_id = $1 ORDER BY id DESC LIMIT 1',
+    `SELECT * FROM transactions
+      WHERE business_id = $1 AND deleted_at IS NULL
+      ORDER BY id DESC LIMIT 1`,
+    [businessId],
+  );
+  return res.rows[0] || null;
+}
+
+// 'undo'. The row stays; every query that counts money filters it out. Returns
+// null if it was already gone, so a repeated 'undo' can't remove two entries.
+async function softDeleteTransaction(id) {
+  const res = await getPool().query(
+    `UPDATE transactions SET deleted_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING *`,
+    [id],
+  );
+  return res.rows[0] || null;
+}
+
+// 'restore' — put back the entry most recently removed by this business. No
+// extra state needed: deleted_at is itself the record of what went last.
+async function restoreLastDeleted(businessId) {
+  const res = await getPool().query(
+    `UPDATE transactions SET deleted_at = NULL
+      WHERE id = (
+        SELECT id FROM transactions
+         WHERE business_id = $1 AND deleted_at IS NOT NULL
+         ORDER BY deleted_at DESC, id DESC
+         LIMIT 1
+      )
+      RETURNING *`,
     [businessId],
   );
   return res.rows[0] || null;
@@ -139,7 +179,7 @@ async function confirmTransaction(id) {
 async function listNeedsReview(businessId) {
   const res = await getPool().query(
     `SELECT * FROM transactions
-      WHERE business_id = $1 AND needs_review = TRUE
+      WHERE business_id = $1 AND needs_review = TRUE AND deleted_at IS NULL
       ORDER BY created_at ASC, id ASC`,
     [businessId],
   );
@@ -154,7 +194,7 @@ async function getRunningTotals(businessId) {
        COALESCE(SUM(amount) FILTER (WHERE type = 'sale'), 0)    AS total_sales,
        COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0) AS total_expenses
      FROM transactions
-     WHERE business_id = $1`,
+     WHERE business_id = $1 AND deleted_at IS NULL`,
     [businessId],
   );
   return {
@@ -172,4 +212,6 @@ module.exports = {
   updateTransactionFromExtraction,
   confirmTransaction,
   listNeedsReview,
+  softDeleteTransaction,
+  restoreLastDeleted,
 };

@@ -28,6 +28,7 @@ async function getTotalsBetween(businessId, start, end) {
               ) AS effective_date
          FROM transactions
         WHERE business_id = $1
+          AND deleted_at IS NULL
      )
      SELECT
        COALESCE(SUM(amount) FILTER (WHERE type = 'sale'), 0)    AS total_sales,

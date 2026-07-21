@@ -25,6 +25,8 @@ const {
   updateTransactionFromExtraction,
   confirmTransaction,
   listNeedsReview,
+  softDeleteTransaction,
+  restoreLastDeleted,
 } = require('../repositories/transactions');
 const { getTotalsBetween } = require('../repositories/summaries');
 const { estimateVat, resolvePeriod, buildSummaryMessage } = require('../services/weeklySummary');
@@ -153,7 +155,21 @@ async function reviewStep(business, prefix = '') {
   await setAwaitingReview(business.id, next.id);
 
   const remaining = flagged.length === 1 ? '1 entry' : `${flagged.length} entries`;
-  return `${prefix}${remaining} to check:\n${describe(next)}.\nReply 'yes' to confirm, or 'fix ...' to correct it.`;
+  return `${prefix}${remaining} to check:\n${describe(next)}.\nReply 'yes' to confirm, 'fix ...' to correct it, or 'undo' to remove it.`;
+}
+
+// 'undo' — take an entry out of the books.
+//
+// It removes and then tells them how to reverse it, rather than asking "are you
+// sure?" first. A confirmation step costs a round trip on every legitimate
+// delete to guard against a rare mistake, and the row is only soft-deleted, so
+// the mistake is cheap to reverse and the common case stays one message.
+async function undoStep(business, tx) {
+  const removed = await softDeleteTransaction(tx.id);
+  if (!removed) return "That entry is already gone. Reply 'restore' to put it back.";
+
+  console.log('[webhook] undo: removed', { transactionId: tx.id });
+  return `Removed: ${describe(removed)}. Reply 'restore' if that was a mistake.`;
 }
 
 // 'summary' — the owner's totals, on demand, for the period they asked about.
@@ -175,7 +191,7 @@ async function summaryStep(business, period) {
   );
 }
 
-// 'fix', 'review' and 'summary': the words the owner can send us.
+// 'fix', 'review', 'summary', 'undo' and 'restore': the words the owner can send us.
 async function handleCommand(body, command) {
   if (!isDbConfigured()) return NO_DB_TEXT;
 
@@ -199,10 +215,26 @@ async function handleCommand(body, command) {
     return summaryStep(business, command.argument);
   }
 
+  // 'restore' looks past the live entries by definition, so it runs before the
+  // "nothing recorded yet" check below — an owner whose only entry was just
+  // deleted still needs to be able to put it back.
+  if (command.name === 'restore') {
+    const restored = await restoreLastDeleted(business.id);
+    if (!restored) return "There's nothing to restore — I haven't removed any of your entries.";
+    console.log('[webhook] restore: put back', { transactionId: restored.id });
+    return `Back in: ${describe(restored)}.`;
+  }
+
   const last = await findLatestForBusiness(business.id);
 
   if (!last) {
     return "I don't have any entries for you yet. Send a photo of a receipt, a voice note, or just tell me what you bought or sold.";
+  }
+
+  // Outside a review walk, 'undo' means the newest entry — the same thing 'fix'
+  // means, and the one an owner who has just realised a mistake is thinking of.
+  if (command.name === 'undo') {
+    return undoStep(business, last);
   }
 
   // Bare "fix": show them what we have and wait for the correction.
@@ -303,6 +335,13 @@ async function handleInbound(body, source) {
         await confirmTransaction(review.tx.id);
         console.log('[webhook] review: confirmed', { transactionId: review.tx.id });
         return reviewStep(review.business, 'Confirmed. ');
+      }
+
+      // Mid-walk 'undo' removes the entry on screen, then carries on down the
+      // queue — the natural way to clear a duplicate you've just been shown.
+      if (command && command.name === 'undo') {
+        const message = await undoStep(review.business, review.tx);
+        return reviewStep(review.business, `${message} `);
       }
 
       if (command && command.name === 'fix') {

@@ -14,6 +14,15 @@ const FIX_RE = /^fix\b[\s:,-]*(.*)$/is;
 // would hijack messages the owner never meant as commands.
 const REVIEW_RE = /^(review|confirm)\b[\s:,-]*$/i;
 
+// "undo", "delete", "remove" — take the last entry out of the books. Kept as
+// strict as REVIEW_RE and for the same reason: these are ordinary words, and
+// "delete the old stock 2000" is a message about stock, not an instruction.
+// Only the bare word counts.
+const UNDO_RE = /^(?:undo|delete|remove|cancel)\b[\s.!]*$/i;
+
+// "restore", "undelete" — put back what 'undo' just removed.
+const RESTORE_RE = /^(?:restore|undelete|undo undo)\b[\s.!]*$/i;
+
 // "summary", "totals", "report", optionally followed by a period: "summary today",
 // "totals last week", "summary for the month".
 //
@@ -68,7 +77,8 @@ function isAffirmative(text) {
 
 /**
  * Returns { name: 'fix', argument: '2400' } | { name: 'review' } |
- * { name: 'summary', argument: 'week' } | null.
+ * { name: 'summary', argument: 'week' } | { name: 'undo' } |
+ * { name: 'restore' } | null.
  *
  * For 'fix', `argument` is whatever followed the word on the same line — empty
  * when the owner just said "fix" and is waiting to be asked. For 'summary' it is
@@ -79,6 +89,8 @@ function parseCommand(text) {
   if (!trimmed) return null;
 
   if (REVIEW_RE.test(trimmed)) return { name: 'review', argument: '' };
+  if (RESTORE_RE.test(trimmed)) return { name: 'restore', argument: '' };
+  if (UNDO_RE.test(trimmed)) return { name: 'undo', argument: '' };
 
   const summary = SUMMARY_RE.exec(trimmed);
   if (summary) {
