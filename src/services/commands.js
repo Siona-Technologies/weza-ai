@@ -20,6 +20,10 @@ const REVIEW_RE = /^(review|confirm)\b[\s:,-]*$/i;
 // Only the bare word counts.
 const UNDO_RE = /^(?:undo|delete|remove|cancel)\b[\s.!]*$/i;
 
+// "receipt", "photo", "image" — show me the picture again. Same strictness as
+// the rest: "receipt from Naivas 800" is an owner recording a purchase.
+const RECEIPT_RE = /^(?:receipt|photo|image|picha)\b[\s.!?]*$/i;
+
 // "restore", "undelete" — put back what 'undo' just removed.
 const RESTORE_RE = /^(?:restore|undelete|undo undo)\b[\s.!]*$/i;
 
@@ -78,7 +82,7 @@ function isAffirmative(text) {
 /**
  * Returns { name: 'fix', argument: '2400' } | { name: 'review' } |
  * { name: 'summary', argument: 'week' } | { name: 'undo' } |
- * { name: 'restore' } | null.
+ * { name: 'restore' } | { name: 'receipt' } | null.
  *
  * For 'fix', `argument` is whatever followed the word on the same line — empty
  * when the owner just said "fix" and is waiting to be asked. For 'summary' it is
@@ -89,6 +93,7 @@ function parseCommand(text) {
   if (!trimmed) return null;
 
   if (REVIEW_RE.test(trimmed)) return { name: 'review', argument: '' };
+  if (RECEIPT_RE.test(trimmed)) return { name: 'receipt', argument: '' };
   if (RESTORE_RE.test(trimmed)) return { name: 'restore', argument: '' };
   if (UNDO_RE.test(trimmed)) return { name: 'undo', argument: '' };
 

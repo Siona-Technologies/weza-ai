@@ -106,6 +106,21 @@ async function findLatestForBusiness(businessId) {
   return res.rows[0] || null;
 }
 
+// 'receipt'. The newest entry that actually has a stored image — not simply the
+// newest entry, which is very often a text or voice capture with no picture at
+// all. Skipping to the last real photo is what the owner means by "show me the
+// receipt", and answering "that one has no image" about a message they never
+// sent a photo for would be a strange thing to say.
+async function findLatestWithImage(businessId) {
+  const res = await getPool().query(
+    `SELECT * FROM transactions
+      WHERE business_id = $1 AND deleted_at IS NULL AND image_public_id IS NOT NULL
+      ORDER BY id DESC LIMIT 1`,
+    [businessId],
+  );
+  return res.rows[0] || null;
+}
+
 // 'undo'. The row stays; every query that counts money filters it out. Returns
 // null if it was already gone, so a repeated 'undo' can't remove two entries.
 async function softDeleteTransaction(id) {
@@ -218,6 +233,7 @@ module.exports = {
   updateTransactionFromExtraction,
   confirmTransaction,
   listNeedsReview,
+  findLatestWithImage,
   softDeleteTransaction,
   restoreLastDeleted,
 };

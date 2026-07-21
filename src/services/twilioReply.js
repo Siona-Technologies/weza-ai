@@ -27,7 +27,12 @@ function getClient() {
 
 // `to` is the WhatsApp address as Twilio sends it in From, e.g.
 // "whatsapp:+254712345678" — pass it through unchanged.
-async function sendWhatsApp(to, body) {
+//
+// `mediaUrl` attaches an image, used by 'receipt' to put the actual photo back
+// in the chat rather than a link the owner has to open. Twilio fetches the URL
+// itself, server-side, which is why a short-lived signed Cloudinary link works:
+// it only has to be valid for the moment of sending, not for the owner's day.
+async function sendWhatsApp(to, body, { mediaUrl = null } = {}) {
   if (!isOutboundConfigured()) {
     throw new Error('Twilio outbound is not configured (need TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER).');
   }
@@ -35,6 +40,7 @@ async function sendWhatsApp(to, body) {
     from: process.env.TWILIO_WHATSAPP_NUMBER,
     to,
     body,
+    ...(mediaUrl ? { mediaUrl: [mediaUrl] } : {}),
   });
 
   // Outbound messages are billed per message, and they're easy to forget in a
