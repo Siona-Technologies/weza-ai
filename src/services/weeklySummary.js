@@ -48,6 +48,63 @@ function previousWeekStart(reference = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+// Today's date in the owner's timezone, as 'YYYY-MM-DD'. Same trap as weekStart:
+// Render runs UTC, so between midnight and 3am in Kenya the server is still on
+// yesterday.
+function todayInKenya(reference = new Date()) {
+  return reference.toLocaleDateString('en-CA', { timeZone: KENYA_TZ });
+}
+
+function addDays(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function monthStart(reference = new Date()) {
+  return `${todayInKenya(reference).slice(0, 7)}-01`;
+}
+
+// Date.UTC takes a 0-based month, so passing the 1-based month number lands on
+// the next one — and rolls the year over correctly in December.
+function nextMonthStart(reference = new Date()) {
+  const [year, month] = monthStart(reference).split('-').map(Number);
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * The periods 'summary' understands, each as a half-open range [start, end) of
+ * dates in the owner's timezone.
+ *
+ * VAT is left off the daily figure deliberately. VAT is a periodic liability,
+ * not a daily one, and putting "Est. VAT" against a single day's takings invites
+ * an owner to read it as money they owe today.
+ */
+function resolvePeriod(period, reference = new Date()) {
+  switch (period) {
+    case 'today': {
+      const start = todayInKenya(reference);
+      return { start, end: addDays(start, 1), label: 'Today', includeVat: false };
+    }
+    case 'last_week': {
+      const start = previousWeekStart(reference);
+      return { start, end: addDays(start, 7), label: 'Last week', includeVat: true };
+    }
+    case 'month':
+      return {
+        start: monthStart(reference),
+        end: nextMonthStart(reference),
+        label: 'This month',
+        includeVat: true,
+      };
+    case 'week':
+    default: {
+      const start = weekStart(reference);
+      return { start, end: addDays(start, 7), label: 'This week', includeVat: true };
+    }
+  }
+}
+
 function formatKes(amount) {
   return Math.round(Number(amount) || 0).toLocaleString('en-KE');
 }
@@ -57,12 +114,20 @@ function formatKes(amount) {
  *
  *   This week: 45,000 KES sales, 12,000 KES expenses. Est. VAT: 7,200 KES.
  *   3 items need your confirmation — reply 'review'.
+ *
+ * `includeNet` and `includeVat` default to the scheduled job's format so that
+ * message is unchanged; the on-demand 'summary' command turns net on, and turns
+ * VAT off for a single day.
  */
-function buildSummaryMessage({ totalSales, totalExpenses, estVat, needsReviewCount }, { label = 'Last week' } = {}) {
+function buildSummaryMessage(
+  { totalSales, totalExpenses, estVat, needsReviewCount },
+  { label = 'Last week', includeVat = true, includeNet = false } = {},
+) {
   const parts = [
     `${label}: ${formatKes(totalSales)} KES sales, ${formatKes(totalExpenses)} KES expenses.`,
-    `Est. VAT: ${formatKes(estVat)} KES.`,
   ];
+  if (includeNet) parts.push(`Net: ${formatKes(Number(totalSales) - Number(totalExpenses))} KES.`);
+  if (includeVat) parts.push(`Est. VAT: ${formatKes(estVat)} KES.`);
   if (needsReviewCount > 0) {
     const item = needsReviewCount === 1 ? 'item needs' : 'items need';
     parts.push(`${needsReviewCount} ${item} your confirmation — reply 'review'.`);
@@ -75,6 +140,11 @@ module.exports = {
   estimateVat,
   weekStart,
   previousWeekStart,
+  todayInKenya,
+  monthStart,
+  nextMonthStart,
+  addDays,
+  resolvePeriod,
   buildSummaryMessage,
   formatKes,
 };

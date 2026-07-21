@@ -14,6 +14,43 @@ const FIX_RE = /^fix\b[\s:,-]*(.*)$/is;
 // would hijack messages the owner never meant as commands.
 const REVIEW_RE = /^(review|confirm)\b[\s:,-]*$/i;
 
+// "summary", "totals", "report", optionally followed by a period: "summary today",
+// "totals last week", "summary for the month".
+//
+// The trailing text must be a period we recognise. Anything else means this was
+// never a report request — "total 5000" is far more likely to be an owner
+// recording a sale than asking for one, and hijacking it would lose their money.
+// parseCommand falls through to normal extraction in that case.
+const SUMMARY_RE = /^(?:summary|totals?|report)\b[\s:,-]*(.*)$/is;
+
+// 'leo' is Swahili for today, alongside the 'sawa'/'ndio' already accepted below.
+const PERIOD_WORDS = [
+  [/^(?:this week|week)?$/, 'week'],
+  [/^(?:today|leo)$/, 'today'],
+  [/^last week$/, 'last_week'],
+  [/^(?:this )?month$/, 'month'],
+];
+
+/**
+ * 'today' | 'week' | 'last_week' | 'month', or null when the words after the
+ * command aren't a period at all. Bare "summary" means the week in progress —
+ * the period an owner asking mid-week is asking about.
+ */
+function parsePeriod(argument) {
+  const text = (argument || '')
+    .toLowerCase()
+    .replace(/[.!?]+$/, '')
+    .replace(/^for\s+/, '')
+    .replace(/\bthe\s+/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  for (const [re, name] of PERIOD_WORDS) {
+    if (re.test(text)) return name;
+  }
+  return null;
+}
+
 // "yes", "yeah", "ok", "sawa", "ndio", "correct" — an owner agreeing that the
 // entry we just put in front of them is right.
 //
@@ -30,9 +67,12 @@ function isAffirmative(text) {
 }
 
 /**
- * Returns { name: 'fix', argument: '2400' } | { name: 'review' } | null.
- * `argument` is whatever followed "fix" on the same line — empty when the owner
- * just said "fix" and is waiting to be asked.
+ * Returns { name: 'fix', argument: '2400' } | { name: 'review' } |
+ * { name: 'summary', argument: 'week' } | null.
+ *
+ * For 'fix', `argument` is whatever followed the word on the same line — empty
+ * when the owner just said "fix" and is waiting to be asked. For 'summary' it is
+ * the resolved period name.
  */
 function parseCommand(text) {
   const trimmed = (text || '').trim();
@@ -40,10 +80,18 @@ function parseCommand(text) {
 
   if (REVIEW_RE.test(trimmed)) return { name: 'review', argument: '' };
 
+  const summary = SUMMARY_RE.exec(trimmed);
+  if (summary) {
+    const period = parsePeriod(summary[1]);
+    // No recognised period: not a report request. Fall through so the message
+    // gets extracted as an ordinary transaction instead of being swallowed.
+    if (period) return { name: 'summary', argument: period };
+  }
+
   const fix = FIX_RE.exec(trimmed);
   if (fix) return { name: 'fix', argument: (fix[1] || '').trim() };
 
   return null;
 }
 
-module.exports = { parseCommand, isAffirmative };
+module.exports = { parseCommand, isAffirmative, parsePeriod };
